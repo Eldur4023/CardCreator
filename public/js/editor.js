@@ -425,6 +425,9 @@ function selectCategory(cat) {
     } else if (cat === 'Adventure') {
         loadAdventureTextOptions();
         drawCard();
+    } else if (cat === 'Prepared') {
+        loadPreparedTextOptions();
+        drawCard();
     } else {
         loadDefaultTextOptions();
         drawCard();
@@ -461,6 +464,9 @@ function selectSubcategory(sub) {
         initClassEditor();
     } else if (_activeCat === 'Adventure') {
         loadAdventureTextOptions();
+        drawCard();
+    } else if (_activeCat === 'Prepared') {
+        loadPreparedTextOptions();
         drawCard();
     }
 }
@@ -1565,6 +1571,23 @@ function loadAdventureTextOptions() {
         title2:  { name:'Adv. Title',      text:'', x:0.0814,  y:0.639,   width:0.4,    height:0.0296, oneLine:true, font:'belerenb', size:0.0296 },
         type2:   { name:'Adv. Type',       text:'', x:0.0814,  y:0.6845,  width:0.4,    height:0.0296, oneLine:true, font:'belerenb', size:0.0296 },
         rules2:  { name:'Adv. Rules Text', text:'', x:0.5264,  y:0.6505,  width:0.3868, height:0.236,  size:0.0353 },
+    });
+}
+
+// ── Prepared card text options ────────────────────────────────────────────────
+
+function loadPreparedTextOptions() {
+    card.artBounds = { x:0.0767, y:0.1129, width:0.8486, height:0.4131 };
+    loadTextOptions({
+        mana:    { name:'Mana Cost',        text:'', x:-0.030,  y:0.075,   width:0.9292, height:71/2100,  oneLine:true, size:71/1638,  align:'right', manaCost:true, manaSpacing:0 },
+        title:   { name:'Title',            text:'', x:0.100,   y:0.085,   width:0.8292, height:0.0543, oneLine:true, font:'belerenb', size:0.0381 },
+        type:    { name:'Type',             text:'', x:0.100,   y:0.575,   width:0.8292, height:0.0400, oneLine:true, font:'belerenb', size:0.0324 },
+        rules:   { name:'Rules Text',       text:'', x:0.100,   y:0.674,   width:0.3800, height:0.2800, size:0.0324 },
+        pt:      { name:'Power/Toughness',  text:'', x:0.766,   y:0.884,   width:0.1367, height:0.0372, oneLine:true, font:'belerenbsc', size:0.0372, align:'center' },
+        title2:  { name:'Spell Name',       text:'', x:0.510,   y:0.635,   width:0.4000, height:0.0350, oneLine:true, font:'belerenb', size:0.0296 },
+        mana2:   { name:'Spell Mana Cost',  text:'', x:0.445,   y:0.633,   width:0.4500, height:71/2100, oneLine:true, size:0.0296, align:'right', manaCost:true, manaSpacing:0 },
+        type2:   { name:'Spell Type',       text:'', x:0.510,   y:0.680,   width:0.4500, height:0.0320, oneLine:true, font:'belerenb', size:0.0296 },
+        rules2:  { name:'Spell Rules Text', text:'', x:0.510,   y:0.725,   width:0.4500, height:0.2000, size:0.0324 },
     });
 }
 
