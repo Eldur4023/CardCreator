@@ -183,7 +183,7 @@ label input[type=checkbox] { width: auto; cursor: pointer; accent-color: var(--a
     margin-bottom: 6px;
 }
 
-#frame-subcategories { margin-top: 2px; }
+#frame-subcategories { margin-top: 2px; flex-direction: column; }
 
 .cat-btn, .sub-btn { flex: none; }
 

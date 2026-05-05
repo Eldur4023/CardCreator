@@ -354,9 +354,27 @@ function artistEdited(value) {
 // ── Frame browser ─────────────────────────────────────────────────────────────
 var _frameTree        = {};
 var _activeCat        = null;
-var _activeSub        = null;
+var _activePath       = [];   // path segments within the active category's tree
 var selectedFrame     = null;
 var selectedMaskIndex = -1;
+
+// Returns the tree node at _activeCat + _activePath
+function _activeNode() {
+    if (!_activeCat || !_frameTree[_activeCat]) return null;
+    const catNode = _frameTree[_activeCat];
+    if (!_activePath.length) return null;
+    // First segment indexes directly into the category object
+    let node = catNode[_activePath[0]];
+    if (!node) return null;
+    // Remaining segments go through .subs
+    for (let i = 1; i < _activePath.length; i++) {
+        node = node?.subs?.[_activePath[i]];
+        if (!node) return null;
+    }
+    return node;
+}
+
+function _activeSub() { return _activePath[0] || null; }
 
 async function initFrameBrowser() {
     try {
@@ -384,18 +402,10 @@ function renderCategories() {
         el.appendChild(btn);
     });
     if (!_activeCat || !_frameTree[_activeCat]) selectCategory(cats[0]);
-    else renderSubcategories();
+    else { renderCascade(); renderFramePicker(); }
 }
 
-function selectCategory(cat) {
-    const leaving = _activeCat;
-    _activeCat = cat;
-    _activeSub = null;
-    document.querySelectorAll('.cat-btn').forEach(b => b.classList.toggle('active-cat', b.textContent === cat));
-    const subs = Object.keys(_frameTree[cat] || {});
-    _activeSub = subs[0] || null;
-
-    // Cleanup previous special category
+function _cleanupSpecialEditors() {
     card.planeswalker = null;
     card.saga = null;
     card.class = null;
@@ -410,64 +420,80 @@ function selectCategory(cat) {
         classContext.clearRect(0, 0, classCanvas.width, classCanvas.height);
     document.getElementById('special-editor').innerHTML = '';
     document.getElementById('text-options').innerHTML = '';
-
-    renderSubcategories();
-
-    if (cat === 'Planeswalker') {
-        loadDefaultTextOptions();
-        initPlaneswalkerEditor();
-    } else if (cat === 'Saga') {
-        loadSagaTextOptions();
-        initSagaEditor();
-    } else if (cat === 'Class') {
-        loadClassTextOptions();
-        initClassEditor();
-    } else if (cat === 'Adventure') {
-        loadAdventureTextOptions();
-        drawCard();
-    } else if (cat === 'Prepared') {
-        loadPreparedTextOptions();
-        drawCard();
-    } else {
-        loadDefaultTextOptions();
-        drawCard();
-    }
 }
 
-function renderSubcategories() {
-    const el   = document.getElementById('frame-subcategories');
+function _initSpecialEditor() {
+    if (_activeCat === 'Planeswalker') { loadDefaultTextOptions(); initPlaneswalkerEditor(); }
+    else if (_activeCat === 'Saga')    { loadSagaTextOptions();    initSagaEditor(); }
+    else if (_activeCat === 'Class')   { loadClassTextOptions();   initClassEditor(); }
+    else if (_activeCat === 'Adventure') { loadAdventureTextOptions(); drawCard(); }
+    else if (_activeCat === 'Prepared')  { loadPreparedTextOptions(); drawCard(); }
+    else { loadDefaultTextOptions(); drawCard(); }
+}
+
+function selectCategory(cat) {
+    _activeCat  = cat;
+    _activePath = [];
+    document.querySelectorAll('.cat-btn').forEach(b => b.classList.toggle('active-cat', b.textContent === cat));
+
+    _cleanupSpecialEditors();
+
+    // Auto-select first subcategory
+    const firstSub = Object.keys(_frameTree[cat] || {})[0];
+    if (firstSub) _activePath = [firstSub];
+
+    renderCascade();
+    renderFramePicker();
+    _initSpecialEditor();
+}
+
+// Renders one row of buttons per active path level, cascading downward.
+// Each row shows the siblings at that depth; selecting one truncates the
+// path at that level and appends the new segment.
+function renderCascade() {
+    const el = document.getElementById('frame-subcategories');
     el.innerHTML = '';
     if (!_activeCat) return;
-    const subs = Object.keys(_frameTree[_activeCat] || {});
-    subs.forEach(sub => {
-        const btn = document.createElement('button');
-        btn.className   = 'secondary sub-btn' + (sub === _activeSub ? ' active-sub' : '');
-        btn.textContent = sub;
-        btn.onclick     = () => selectSubcategory(sub);
-        el.appendChild(btn);
-    });
-    renderFramePicker();
-}
 
-function selectSubcategory(sub) {
-    _activeSub = sub;
-    document.querySelectorAll('.sub-btn').forEach(b => b.classList.toggle('active-sub', b.textContent === sub));
-    renderFramePicker();
-    if (_activeCat === 'Planeswalker') {
-        loadDefaultTextOptions();
-        initPlaneswalkerEditor();
-    } else if (_activeCat === 'Saga') {
-        loadSagaTextOptions();
-        initSagaEditor();
-    } else if (_activeCat === 'Class') {
-        loadClassTextOptions();
-        initClassEditor();
-    } else if (_activeCat === 'Adventure') {
-        loadAdventureTextOptions();
-        drawCard();
-    } else if (_activeCat === 'Prepared') {
-        loadPreparedTextOptions();
-        drawCard();
+    // Level 0: direct children of the category
+    let children = _frameTree[_activeCat] || {};   // { name: node }
+    let isFirst = true;
+
+    for (let depth = 0; ; depth++) {
+        const keys = Object.keys(children);
+        if (!keys.length) break;
+
+        const selected = _activePath[depth] || null;
+
+        const row = document.createElement('div');
+        row.style.cssText = `display:flex;flex-wrap:wrap;gap:6px;${isFirst ? '' : 'margin-top:4px;'}`;
+        isFirst = false;
+
+        keys.forEach(key => {
+            const btn = document.createElement('button');
+            btn.className   = 'secondary sub-btn' + (key === selected ? ' active-sub' : '');
+            btn.textContent = key;
+            btn.onclick     = () => {
+                if (key === selected && depth > 0) {
+                    // deselect this level → go back to parent
+                    _activePath = _activePath.slice(0, depth);
+                } else {
+                    _activePath = [..._activePath.slice(0, depth), key];
+                }
+                renderCascade();
+                renderFramePicker();
+                if (depth === 0) _initSpecialEditor();
+            };
+            row.appendChild(btn);
+        });
+
+        el.appendChild(row);
+
+        // Descend into the selected node's subs for the next row
+        if (!selected || !children[selected]) break;
+        const nextSubs = children[selected].subs || {};
+        if (!Object.keys(nextSubs).length) break;
+        children = nextSubs;
     }
 }
 
@@ -476,14 +502,19 @@ function renderFramePicker() {
     picker.innerHTML = '';
     selectedFrame = null;
     updateSelectedPreview();
-    if (!_activeCat || !_activeSub) return;
+    if (!_activeCat) return;
 
-    const entries = _frameTree[_activeCat][_activeSub] || [];
-    entries.forEach(entry => {
+    const node = _activeNode();
+    if (!node) return;
+
+    const basePath = [_activeCat, ..._activePath].join('/');
+
+    // Frames
+    (node.frames || []).forEach(entry => {
         const filename = entry.file;
-        const src      = `/img/frames/${_activeCat}/${_activeSub}/${filename}`;
+        const src      = `/img/frames/${basePath}/${filename}`;
         const name     = entry.name || filename.replace(/\.[^.]+$/, '');
-        const meta     = Object.assign({}, entry);  // carries all JSON fields
+        const meta     = Object.assign({}, entry);
 
         const wrap = document.createElement('div');
         wrap.className = 'frame-thumb-wrap';
@@ -1363,7 +1394,7 @@ function initPlaneswalkerEditor() {
         _pwDarkToLight.onload = () => planeswalkerEdited();
         _pwTextMask.onload    = () => { _syncPlaneswalkerInputs(); planeswalkerEdited(); };
     }
-    const isTall      = _activeSub && (_activeSub.toLowerCase().includes('tall') || _activeSub.toLowerCase().includes('compleated'));
+    const isTall      = _activeSub() && (_activeSub().toLowerCase().includes('tall') || _activeSub().toLowerCase().includes('compleated'));
     const uiFolder    = '/img/frames/Planeswalker/_ui';
 
     _pwPlusIcon.src    = `${uiFolder}/planeswalkerPlus.png`;
@@ -1513,7 +1544,7 @@ function planeswalkerEdited() {
     postCtx.textAlign    = 'center';
     postCtx.textBaseline = 'alphabetic';
 
-    const isTall = _activeSub && (_activeSub.toLowerCase().includes('tall') || _activeSub.toLowerCase().includes('compleated'));
+    const isTall = _activeSub() && (_activeSub().toLowerCase().includes('tall') || _activeSub().toLowerCase().includes('compleated'));
     const layout = (PW_ABILITY_LAYOUT[isTall ? 1 : 0][pw.count - 1]) ?? PW_ABILITY_LAYOUT[0][2];
     console.log('[PW edit] pw.count=', pw.count, 'isTall=', isTall, 'layout=', layout,
         'mask complete=', _pwTextMask.complete, 'mask naturalW=', _pwTextMask.naturalWidth, 'mask src=', _pwTextMask.src);

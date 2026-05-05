@@ -9,6 +9,50 @@
 namespace fs = std::filesystem;
 using json   = nlohmann::json;
 
+// Scans a directory and returns:
+//   { "frames": [{file, ...meta}, ...], "subs": { name: <same structure>, ... } }
+// Folders starting with '_' are skipped.
+static json scan_dir(const fs::path& dir) {
+    json result = json::object();
+    result["frames"] = json::array();
+    result["subs"]   = json::object();
+
+    json meta = json::object();
+    fs::path metaPath = dir / "frames.json";
+    if (fs::exists(metaPath)) {
+        try {
+            std::ifstream f(metaPath);
+            std::string s((std::istreambuf_iterator<char>(f)), {});
+            meta = json::parse(s);
+        } catch (...) {}
+    }
+
+    std::vector<fs::directory_entry> entries(fs::directory_iterator(dir), {});
+    std::sort(entries.begin(), entries.end());
+
+    for (auto& entry : entries) {
+        std::string name = entry.path().filename().string();
+        if (!name.empty() && name[0] == '_') continue;
+
+        if (entry.is_directory()) {
+            result["subs"][name] = scan_dir(entry.path());
+        } else if (entry.is_regular_file()) {
+            auto ext = entry.path().extension().string();
+            if (ext != ".png" && ext != ".jpg" && ext != ".svg" && ext != ".webp") continue;
+
+            json fileObj = json::object();
+            fileObj["file"] = name;
+            if (meta.contains(name) && meta[name].is_object()) {
+                for (auto& [k, v] : meta[name].items())
+                    fileObj[k] = v;
+            }
+            result["frames"].push_back(fileObj);
+        }
+    }
+
+    return result;
+}
+
 int main() {
     osodio::App app;
 
@@ -16,7 +60,7 @@ int main() {
     app.use(osodio::cors());
 
     // Frame browser API
-    // Response: { Category: { Subcategory: [ { file, ...meta }, ... ] } }
+    // Response: { Category: { Subcategory: { frames: [...], subs: { ... } } } }
     app.get("/api/frames", [](osodio::Request&, osodio::Response& res) {
         const std::string base = "./assets/img/frames";
         json root = json::object();
@@ -28,6 +72,8 @@ int main() {
             for (auto& cat : cats) {
                 if (!cat.is_directory()) continue;
                 std::string catName = cat.path().filename().string();
+                if (!catName.empty() && catName[0] == '_') continue;
+
                 root[catName] = json::object();
 
                 std::vector<fs::directory_entry> subs(fs::directory_iterator(cat.path()), {});
@@ -36,40 +82,9 @@ int main() {
                 for (auto& sub : subs) {
                     if (!sub.is_directory()) continue;
                     std::string subName = sub.path().filename().string();
+                    if (!subName.empty() && subName[0] == '_') continue;
 
-                    // Load frames.json if present
-                    json meta = json::object();
-                    fs::path metaPath = sub.path() / "frames.json";
-                    if (fs::exists(metaPath)) {
-                        try {
-                            std::ifstream f(metaPath);
-                            std::string s((std::istreambuf_iterator<char>(f)), {});
-                            meta = json::parse(s);
-                        } catch (...) {}
-                    }
-
-                    json files = json::array();
-                    std::vector<fs::directory_entry> entries(fs::directory_iterator(sub.path()), {});
-                    std::sort(entries.begin(), entries.end());
-
-                    for (auto& entry : entries) {
-                        if (!entry.is_regular_file()) continue;
-                        auto ext = entry.path().extension().string();
-                        if (ext != ".png" && ext != ".jpg" && ext != ".svg" && ext != ".webp") continue;
-
-                        std::string fname = entry.path().filename().string();
-                        json fileObj = json::object();
-                        fileObj["file"] = fname;
-
-                        // Merge per-file metadata if present
-                        if (meta.contains(fname) && meta[fname].is_object()) {
-                            for (auto& [k, v] : meta[fname].items())
-                                fileObj[k] = v;
-                        }
-
-                        files.push_back(fileObj);
-                    }
-                    root[catName][subName] = files;
+                    root[catName][subName] = scan_dir(sub.path());
                 }
             }
         }
