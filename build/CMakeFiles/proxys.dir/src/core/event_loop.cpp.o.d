@@ -1,7 +1,7 @@
 CMakeFiles/proxys.dir/src/core/event_loop.cpp.o: \
- /home/burnt/Github/Proxys/src/core/event_loop.cpp \
+ /home/burnt/Github/CardCreator/src/core/event_loop.cpp \
  /usr/include/stdc-predef.h \
- /home/burnt/Github/Proxys/include/osodio/core/event_loop.hpp \
+ /home/burnt/Github/CardCreator/include/osodio/core/event_loop.hpp \
  /usr/include/c++/13/functional \
  /usr/include/x86_64-linux-gnu/c++/13/bits/c++config.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/os_defines.h \

@@ -1,7 +1,7 @@
 CMakeFiles/proxys.dir/src/http/http_parser.cpp.o: \
- /home/burnt/Github/Proxys/src/http/http_parser.cpp \
+ /home/burnt/Github/CardCreator/src/http/http_parser.cpp \
  /usr/include/stdc-predef.h \
- /home/burnt/Github/Proxys/src/http/http_parser.hpp \
+ /home/burnt/Github/CardCreator/src/http/http_parser.hpp \
  /usr/include/c++/13/string /usr/include/c++/13/bits/requires_hosted.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/c++config.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/os_defines.h \
@@ -224,7 +224,7 @@ CMakeFiles/proxys.dir/src/http/http_parser.cpp.o: \
  /usr/include/c++/13/bits/ranges_algobase.h \
  /usr/include/c++/13/pstl/glue_memory_defs.h \
  /usr/include/c++/13/pstl/execution_defs.h \
- /home/burnt/Github/Proxys/third_party/llhttp/include/llhttp.h \
+ /home/burnt/Github/CardCreator/third_party/llhttp/include/llhttp.h \
  /usr/include/c++/13/algorithm /usr/include/c++/13/bits/ranges_algo.h \
  /usr/include/c++/13/pstl/glue_algorithm_defs.h \
  /usr/include/c++/13/cstring /usr/include/string.h /usr/include/strings.h \

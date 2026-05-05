@@ -1,5 +1,5 @@
 CMakeFiles/proxys.dir/third_party/llhttp/src/api.c.o: \
- /home/burnt/Github/Proxys/third_party/llhttp/src/api.c \
+ /home/burnt/Github/CardCreator/third_party/llhttp/src/api.c \
  /usr/include/stdc-predef.h /usr/include/stdlib.h \
  /usr/include/x86_64-linux-gnu/bits/libc-header-start.h \
  /usr/include/features.h /usr/include/features-time64.h \
@@ -61,7 +61,7 @@ CMakeFiles/proxys.dir/third_party/llhttp/src/api.c.o: \
  /usr/include/strings.h \
  /usr/include/x86_64-linux-gnu/bits/strings_fortified.h \
  /usr/include/x86_64-linux-gnu/bits/string_fortified.h \
- /home/burnt/Github/Proxys/third_party/llhttp/include/llhttp.h \
+ /home/burnt/Github/CardCreator/third_party/llhttp/include/llhttp.h \
  /usr/lib/gcc/x86_64-linux-gnu/13/include/stdint.h /usr/include/stdint.h \
  /usr/include/x86_64-linux-gnu/bits/wchar.h \
  /usr/include/x86_64-linux-gnu/bits/stdint-uintn.h \

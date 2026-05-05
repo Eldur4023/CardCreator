@@ -1,4 +1,4 @@
-# Install script for directory: /home/burnt/Github/Proxys
+# Install script for directory: /home/burnt/Github/CardCreator
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
@@ -50,5 +50,5 @@ endif()
 
 string(REPLACE ";" "\n" CMAKE_INSTALL_MANIFEST_CONTENT
        "${CMAKE_INSTALL_MANIFEST_FILES}")
-file(WRITE "/home/burnt/Github/Proxys/build/${CMAKE_INSTALL_MANIFEST}"
+file(WRITE "/home/burnt/Github/CardCreator/build/${CMAKE_INSTALL_MANIFEST}"
      "${CMAKE_INSTALL_MANIFEST_CONTENT}")

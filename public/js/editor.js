@@ -137,7 +137,6 @@ async function resetCardIrregularities({ canvas } = {}) {
 
     canvasList.forEach(name => sizeCanvas(name));
 
-    art.src       = '/img/blank.png';
     setSymbol.src = '/img/blank.png';
     watermark.src = '/img/blank.png';
 
@@ -211,9 +210,21 @@ function selectTextArea(key) {
     const editor = document.getElementById('text-editor');
     editor.value = obj.text || '';
     document.getElementById('text-editor-font-size').value = obj.sizeOverride || 0;
+    document.getElementById('text-x').value = obj.x != null ? Math.round(obj.x * 1000) : '';
+    document.getElementById('text-y').value = obj.y != null ? Math.round(obj.y * 1000) : '';
     document.querySelectorAll('.text-option-btn').forEach(b => {
         b.classList.toggle('active', b.textContent === (obj.name || key));
     });
+}
+
+function textPositionEdited() {
+    if (!selectedTextKey || !card.text[selectedTextKey]) return;
+    const obj = card.text[selectedTextKey];
+    const x = parseFloat(document.getElementById('text-x').value);
+    const y = parseFloat(document.getElementById('text-y').value);
+    if (!isNaN(x)) obj.x = x / 1000;
+    if (!isNaN(y)) obj.y = y / 1000;
+    drawCard();
 }
 
 function textEdited() {
@@ -260,36 +271,26 @@ function syncArtInputs() {
 }
 
 function autoFitArt() {
-    if (!card.artBounds) return;
-    const b  = card.artBounds;
-    const bw = b.width  * card.width;
-    const bh = b.height * card.height;
-    if (!art.naturalWidth) return;
-    const scaleX = bw / art.naturalWidth;
-    const scaleY = bh / art.naturalHeight;
-    card.artZoom = Math.max(scaleX, scaleY);
+    if (!art.naturalWidth || art.src.includes('blank')) return;
+    card.artZoom = card.width / art.naturalWidth;
     card.artX    = 0;
     card.artY    = 0;
     syncArtInputs();
     drawCard();
 }
 
-function uploadArt(src, extra) {
+function uploadArt(src) {
     art.src = src;
-    if (extra === 'autoFit') {
-        art.onload = () => { autoFitArt(); drawCard(); };
-    } else {
-        art.onload = () => drawCard();
-    }
+    art.onload = () => { autoFitArt(); drawCard(); };
     card.artSource = src;
     drawCard();
 }
 
 // ── Set symbol editing ────────────────────────────────────────────────────────
 function setSymbolEdited() {
-    card.setSymbolX    = parseFloat(document.getElementById('setSymbol-x').value)    || 0;
-    card.setSymbolY    = parseFloat(document.getElementById('setSymbol-y').value)    || 0;
-    card.setSymbolZoom = (parseFloat(document.getElementById('setSymbol-zoom').value) || 100) / 100;
+    card.setSymbolX    = parseFloat(document.getElementById('setSymbol-x')?.value)    || 0;
+    card.setSymbolY    = parseFloat(document.getElementById('setSymbol-y')?.value)    || 0;
+    card.setSymbolZoom = (parseFloat(document.getElementById('setSymbol-zoom')?.value) || 100) / 100;
     drawCard();
 }
 
@@ -297,9 +298,12 @@ function resetSetSymbol() {
     card.setSymbolX    = 0;
     card.setSymbolY    = 0;
     card.setSymbolZoom = 1;
-    document.getElementById('setSymbol-x').value    = 0;
-    document.getElementById('setSymbol-y').value    = 0;
-    document.getElementById('setSymbol-zoom').value = 100;
+    const xEl = document.getElementById('setSymbol-x');
+    const yEl = document.getElementById('setSymbol-y');
+    const zEl = document.getElementById('setSymbol-zoom');
+    if (xEl) xEl.value = 0;
+    if (yEl) yEl.value = 0;
+    if (zEl) zEl.value = 100;
     drawCard();
 }
 
@@ -458,9 +462,13 @@ function addFrame(extraMasks) {
     const maskImages = [];
     if (extraMasks) {
         extraMasks.forEach(m => {
-            const img = new Image(); img.crossOrigin = 'anonymous'; img.src = m.src;
-            img.onload = () => drawCard();
-            maskImages.push({ name: m.name, src: m.src, image: img });
+            if (m.image) {
+                maskImages.push({ name: m.name, src: m.src, image: m.image });
+            } else {
+                const img = new Image(); img.crossOrigin = 'anonymous'; img.src = m.src;
+                img.onload = () => drawCard();
+                maskImages.push({ name: m.name, src: m.src, image: img });
+            }
         });
     } else if (selectedMaskIndex >= 0 && selectedFrame.masks) {
         const m = selectedFrame.masks[selectedMaskIndex];
@@ -497,6 +505,22 @@ function uploadFrameOption(src) {
 }
 var customCount = 0;
 
+const HALF_MASKS = {
+    right:  { src: '/img/frames/maskRightHalf.png',  name: 'Right Half' },
+    left:   { src: '/img/frames/maskLeftHalf.png',   name: 'Left Half'  },
+    middle: { src: '/img/frames/maskMiddleThird.png', name: 'Mid Third' },
+};
+
+function addFrameWithMask(maskType, maskName) {
+    if (!selectedFrame) return;
+    const m = HALF_MASKS[maskType];
+    const maskImg = new Image();
+    maskImg.crossOrigin = 'anonymous';
+    maskImg.onload = () => drawCard();
+    maskImg.src = m.src;
+    addFrame([{ src: m.src, name: maskName, image: maskImg }]);
+}
+
 // ── Frame list (applied) ──────────────────────────────────────────────────────
 function renderFrameList() {
     const list = document.getElementById('frame-list');
@@ -525,19 +549,12 @@ function renderFrameList() {
         name.className   = 'frame-name';
         name.textContent = frame.name;
 
-        const opacity = document.createElement('input');
-        opacity.type  = 'number'; opacity.min = 0; opacity.max = 100; opacity.step = 1;
-        opacity.className = 'opacity-input';
-        opacity.value = frame.opacity;
-        opacity.oninput = () => { frame.opacity = parseFloat(opacity.value) || 0; drawCard(); };
-
         const del = document.createElement('button');
         del.className   = 'danger';
         del.textContent = '✕';
         del.onclick = () => { card.frames.splice(idx, 1); renderFrameList(); drawCard(); };
 
         item.appendChild(name);
-        item.appendChild(opacity);
         item.appendChild(del);
         list.appendChild(item);
     });
@@ -695,30 +712,15 @@ function _drawCard() {
 function drawArt() {
     if (art.src.includes('blank') || !art.naturalWidth) return;
 
-    const bounds = card.artBounds;
-    let cx, cy, cw, ch;
+    const cx = 0, cy = 0, cw = card.width, ch = card.height;
 
-    if (bounds) {
-        cx = scaleX(bounds.x);
-        cy = scaleY(bounds.y);
-        cw = scaleWidth(bounds.width);
-        ch = scaleHeight(bounds.height);
-    } else {
-        cx = 0; cy = 0; cw = card.width; ch = card.height;
-    }
+    const zoom  = card.artZoom;
+    const drawW = art.naturalWidth  * zoom;
+    const drawH = art.naturalHeight * zoom;
+    const drawX = cx + (cw - drawW) / 2 + card.artX;
+    const drawY = cy + (ch - drawH) / 2 + card.artY;
 
     cardContext.save();
-
-    // clip to art area
-    cardContext.beginPath();
-    cardContext.rect(cx, cy, cw, ch);
-    cardContext.clip();
-
-    const zoom   = card.artZoom;
-    const drawW  = art.naturalWidth  * zoom;
-    const drawH  = art.naturalHeight * zoom;
-    const drawX  = cx + (cw - drawW) / 2 + card.artX;
-    const drawY  = cy + (ch - drawH) / 2 + card.artY;
 
     if (card.artRotate) {
         cardContext.translate(cx + cw / 2, cy + ch / 2);
@@ -753,12 +755,17 @@ function drawFrames() {
             // Render to masking canvas
             frameMaskingContext.clearRect(0, 0, frameMaskingCanvas.width, frameMaskingCanvas.height);
             frameMaskingContext.globalCompositeOperation = 'source-over';
-            frameMaskingContext.drawImage(black, 0, 0);
+            frameMaskingContext.fillStyle = 'black';
+            frameMaskingContext.fillRect(0, 0, frameMaskingCanvas.width, frameMaskingCanvas.height);
             frameMaskingContext.globalCompositeOperation = 'source-in';
             frame.masks.forEach(mask => {
-                if (mask.image && mask.image.complete && mask.image.naturalWidth) {
-                    frameMaskingContext.drawImage(mask.image, fx, fy, fw, fh);
-                }
+                const img = mask.image;
+                const ready = img && (
+                    img instanceof HTMLCanvasElement
+                        ? img.width > 0
+                        : img.complete && img.naturalWidth > 0
+                );
+                if (ready) frameMaskingContext.drawImage(img, fx, fy, fw, fh);
             });
 
             // Apply HSL if needed

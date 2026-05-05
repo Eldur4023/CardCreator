@@ -1,5 +1,5 @@
 CMakeFiles/proxys.dir/third_party/simdjson.cpp.o: \
- /home/burnt/Github/Proxys/third_party/simdjson.cpp \
+ /home/burnt/Github/CardCreator/third_party/simdjson.cpp \
  /usr/include/stdc-predef.h /usr/include/c++/13/cassert \
  /usr/include/x86_64-linux-gnu/c++/13/bits/c++config.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/os_defines.h \

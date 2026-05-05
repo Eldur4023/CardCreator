@@ -1,6 +1,6 @@
 CMakeFiles/proxys.dir/src/app.cpp.o: \
- /home/burnt/Github/Proxys/src/app.cpp /usr/include/stdc-predef.h \
- /home/burnt/Github/Proxys/src/../include/osodio/app.hpp \
+ /home/burnt/Github/CardCreator/src/app.cpp /usr/include/stdc-predef.h \
+ /home/burnt/Github/CardCreator/src/../include/osodio/app.hpp \
  /usr/include/c++/13/string /usr/include/c++/13/bits/requires_hosted.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/c++config.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/os_defines.h \
@@ -152,7 +152,7 @@ CMakeFiles/proxys.dir/src/app.cpp.o: \
  /usr/include/x86_64-linux-gnu/bits/unistd-decl.h \
  /usr/include/x86_64-linux-gnu/bits/unistd_ext.h \
  /usr/include/linux/close_range.h \
- /home/burnt/Github/Proxys/src/../include/osodio/types.hpp \
+ /home/burnt/Github/CardCreator/src/../include/osodio/types.hpp \
  /usr/include/c++/13/functional /usr/include/c++/13/bits/std_function.h \
  /usr/include/c++/13/typeinfo /usr/include/c++/13/array \
  /usr/include/c++/13/bits/stl_algo.h \
@@ -160,7 +160,7 @@ CMakeFiles/proxys.dir/src/app.cpp.o: \
  /usr/include/c++/13/bits/stl_heap.h \
  /usr/include/c++/13/bits/uniform_int_dist.h \
  /usr/include/c++/13/bits/stl_tempbuf.h \
- /home/burnt/Github/Proxys/src/../include/osodio/task.hpp \
+ /home/burnt/Github/CardCreator/src/../include/osodio/task.hpp \
  /usr/include/c++/13/coroutine /usr/include/c++/13/exception \
  /usr/include/c++/13/bits/exception_ptr.h \
  /usr/include/c++/13/bits/cxxabi_init_exception.h \
@@ -226,17 +226,17 @@ CMakeFiles/proxys.dir/src/app.cpp.o: \
  /usr/include/c++/13/bits/ranges_algobase.h \
  /usr/include/c++/13/pstl/glue_memory_defs.h \
  /usr/include/c++/13/pstl/execution_defs.h \
- /home/burnt/Github/Proxys/include/osodio/core/event_loop.hpp \
+ /home/burnt/Github/CardCreator/include/osodio/core/event_loop.hpp \
  /usr/include/c++/13/mutex /usr/include/c++/13/bits/chrono.h \
  /usr/include/c++/13/ratio /usr/include/c++/13/limits \
  /usr/include/c++/13/ctime /usr/include/c++/13/bits/parse_numbers.h \
  /usr/include/c++/13/bits/unique_lock.h \
- /home/burnt/Github/Proxys/src/../include/osodio/cancel.hpp \
+ /home/burnt/Github/CardCreator/src/../include/osodio/cancel.hpp \
  /usr/include/c++/13/atomic \
- /home/burnt/Github/Proxys/src/../include/osodio/router.hpp \
+ /home/burnt/Github/CardCreator/src/../include/osodio/router.hpp \
  /usr/include/c++/13/optional \
- /home/burnt/Github/Proxys/src/../include/osodio/handler_traits.hpp \
- /home/burnt/Github/Proxys/third_party/simdjson.h \
+ /home/burnt/Github/CardCreator/src/../include/osodio/handler_traits.hpp \
+ /home/burnt/Github/CardCreator/third_party/simdjson.h \
  /usr/include/c++/13/cassert /usr/include/assert.h \
  /usr/include/c++/13/cfloat \
  /usr/lib/gcc/x86_64-linux-gnu/13/include/float.h /usr/include/strings.h \
@@ -258,8 +258,8 @@ CMakeFiles/proxys.dir/src/app.cpp.o: \
  /usr/include/c++/13/bits/quoted_string.h /usr/include/c++/13/algorithm \
  /usr/include/c++/13/bits/ranges_algo.h \
  /usr/include/c++/13/pstl/glue_algorithm_defs.h \
- /home/burnt/Github/Proxys/src/../include/osodio/request.hpp \
- /home/burnt/Github/Proxys/third_party/nlohmann/json.hpp \
+ /home/burnt/Github/CardCreator/src/../include/osodio/request.hpp \
+ /home/burnt/Github/CardCreator/third_party/nlohmann/json.hpp \
  /usr/include/c++/13/forward_list /usr/include/c++/13/bits/forward_list.h \
  /usr/include/c++/13/bits/forward_list.tcc /usr/include/c++/13/map \
  /usr/include/c++/13/bits/stl_tree.h /usr/include/c++/13/bits/stl_map.h \
@@ -300,27 +300,28 @@ CMakeFiles/proxys.dir/src/app.cpp.o: \
  /usr/include/c++/13/bits/fs_dir.h /usr/include/c++/13/bits/fs_ops.h \
  /usr/include/c++/13/numeric /usr/include/c++/13/bits/stl_numeric.h \
  /usr/include/c++/13/pstl/glue_numeric_defs.h /usr/include/c++/13/any \
- /home/burnt/Github/Proxys/src/../include/osodio/response.hpp \
+ /home/burnt/Github/CardCreator/src/../include/osodio/response.hpp \
  /usr/include/c++/13/fstream \
  /usr/include/x86_64-linux-gnu/c++/13/bits/basic_file.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/c++io.h \
  /usr/include/c++/13/bits/fstream.tcc \
- /home/burnt/Github/Proxys/third_party/inja.hpp /usr/include/c++/13/stack \
- /usr/include/c++/13/deque /usr/include/c++/13/bits/stl_deque.h \
- /usr/include/c++/13/bits/deque.tcc /usr/include/c++/13/bits/stl_stack.h \
- /home/burnt/Github/Proxys/src/../include/osodio/validation.hpp \
- /home/burnt/Github/Proxys/src/../include/osodio/schema.hpp \
- /home/burnt/Github/Proxys/src/../include/osodio/errors.hpp \
- /home/burnt/Github/Proxys/src/../include/osodio/di.hpp \
+ /home/burnt/Github/CardCreator/third_party/inja.hpp \
+ /usr/include/c++/13/stack /usr/include/c++/13/deque \
+ /usr/include/c++/13/bits/stl_deque.h /usr/include/c++/13/bits/deque.tcc \
+ /usr/include/c++/13/bits/stl_stack.h \
+ /home/burnt/Github/CardCreator/src/../include/osodio/validation.hpp \
+ /home/burnt/Github/CardCreator/src/../include/osodio/schema.hpp \
+ /home/burnt/Github/CardCreator/src/../include/osodio/errors.hpp \
+ /home/burnt/Github/CardCreator/src/../include/osodio/di.hpp \
  /usr/include/c++/13/typeindex \
- /home/burnt/Github/Proxys/src/../include/osodio/openapi.hpp \
- /home/burnt/Github/Proxys/src/../include/osodio/group.hpp \
- /home/burnt/Github/Proxys/src/../include/osodio/websocket.hpp \
- /home/burnt/Github/Proxys/src/../include/osodio/metrics.hpp \
+ /home/burnt/Github/CardCreator/src/../include/osodio/openapi.hpp \
+ /home/burnt/Github/CardCreator/src/../include/osodio/group.hpp \
+ /home/burnt/Github/CardCreator/src/../include/osodio/websocket.hpp \
+ /home/burnt/Github/CardCreator/src/../include/osodio/metrics.hpp \
  /usr/include/c++/13/chrono /usr/include/c++/13/bits/chrono_io.h \
  /usr/include/c++/13/format /usr/include/c++/13/charconv \
  /usr/include/c++/13/variant \
- /home/burnt/Github/Proxys/src/core/tcp_server.hpp \
+ /home/burnt/Github/CardCreator/src/core/tcp_server.hpp \
  /usr/include/c++/13/csignal /usr/include/signal.h \
  /usr/include/x86_64-linux-gnu/bits/signum-generic.h \
  /usr/include/x86_64-linux-gnu/bits/signum-arch.h \

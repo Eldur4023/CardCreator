@@ -54,10 +54,10 @@ RM = /usr/bin/cmake -E rm -f
 EQUALS = =
 
 # The top-level source directory on which CMake was run.
-CMAKE_SOURCE_DIR = /home/burnt/Github/Proxys
+CMAKE_SOURCE_DIR = /home/burnt/Github/CardCreator
 
 # The top-level build directory on which CMake was run.
-CMAKE_BINARY_DIR = /home/burnt/Github/Proxys/build
+CMAKE_BINARY_DIR = /home/burnt/Github/CardCreator/build
 
 #=============================================================================
 # Directory level rules for the build root directory
@@ -81,14 +81,14 @@ clean: CMakeFiles/proxys.dir/clean
 CMakeFiles/proxys.dir/all:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/proxys.dir/build.make CMakeFiles/proxys.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/proxys.dir/build.make CMakeFiles/proxys.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/burnt/Github/Proxys/build/CMakeFiles --progress-num=1,2,3,4,5,6,7,8,9,10,11,12,13,14 "Built target proxys"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/burnt/Github/CardCreator/build/CMakeFiles --progress-num=1,2,3,4,5,6,7,8,9,10,11,12,13,14 "Built target proxys"
 .PHONY : CMakeFiles/proxys.dir/all
 
 # Build rule for subdir invocation for target.
 CMakeFiles/proxys.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/burnt/Github/Proxys/build/CMakeFiles 14
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/burnt/Github/CardCreator/build/CMakeFiles 14
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/proxys.dir/all
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/burnt/Github/Proxys/build/CMakeFiles 0
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/burnt/Github/CardCreator/build/CMakeFiles 0
 .PHONY : CMakeFiles/proxys.dir/rule
 
 # Convenience name for target.

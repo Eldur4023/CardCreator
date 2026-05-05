@@ -1,7 +1,7 @@
 CMakeFiles/proxys.dir/src/core/tcp_server.cpp.o: \
- /home/burnt/Github/Proxys/src/core/tcp_server.cpp \
+ /home/burnt/Github/CardCreator/src/core/tcp_server.cpp \
  /usr/include/stdc-predef.h \
- /home/burnt/Github/Proxys/src/core/tcp_server.hpp \
+ /home/burnt/Github/CardCreator/src/core/tcp_server.hpp \
  /usr/include/c++/13/string /usr/include/c++/13/bits/requires_hosted.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/c++config.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/os_defines.h \
@@ -209,7 +209,7 @@ CMakeFiles/proxys.dir/src/core/tcp_server.cpp.o: \
  /usr/include/c++/13/bits/ranges_algobase.h \
  /usr/include/c++/13/pstl/glue_memory_defs.h \
  /usr/include/c++/13/pstl/execution_defs.h \
- /home/burnt/Github/Proxys/include/osodio/core/event_loop.hpp \
+ /home/burnt/Github/CardCreator/include/osodio/core/event_loop.hpp \
  /usr/include/c++/13/functional /usr/include/c++/13/bits/std_function.h \
  /usr/include/c++/13/unordered_map \
  /usr/include/c++/13/bits/unordered_map.h \
@@ -229,13 +229,13 @@ CMakeFiles/proxys.dir/src/core/tcp_server.cpp.o: \
  /usr/include/c++/13/limits /usr/include/c++/13/ctime \
  /usr/include/c++/13/bits/parse_numbers.h \
  /usr/include/c++/13/bits/unique_lock.h \
- /home/burnt/Github/Proxys/src/core/../../include/osodio/types.hpp \
- /home/burnt/Github/Proxys/src/core/../../include/osodio/task.hpp \
+ /home/burnt/Github/CardCreator/src/core/../../include/osodio/types.hpp \
+ /home/burnt/Github/CardCreator/src/core/../../include/osodio/task.hpp \
  /usr/include/c++/13/coroutine /usr/include/c++/13/utility \
  /usr/include/c++/13/bits/stl_relops.h \
- /home/burnt/Github/Proxys/src/core/../../include/osodio/cancel.hpp \
- /home/burnt/Github/Proxys/src/core/../http/http_connection.hpp \
- /home/burnt/Github/Proxys/src/core/../http/http_parser.hpp \
+ /home/burnt/Github/CardCreator/src/core/../../include/osodio/cancel.hpp \
+ /home/burnt/Github/CardCreator/src/core/../http/http_connection.hpp \
+ /home/burnt/Github/CardCreator/src/core/../http/http_parser.hpp \
  /usr/include/x86_64-linux-gnu/sys/socket.h \
  /usr/include/x86_64-linux-gnu/bits/types/struct_iovec.h \
  /usr/include/x86_64-linux-gnu/bits/socket.h \

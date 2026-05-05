@@ -10,20 +10,16 @@
 <div id="app">
     <div id="topbar">
         <h1>Card Creator</h1>
-        <span>Powered by Osodio</span>
-    </div>
-
-    <!-- ── Sidebar ── -->
-    <div id="sidebar">
         <div id="tabs">
             <div class="tab active" data-tab="frame">Frame</div>
             <div class="tab" data-tab="text">Text</div>
             <div class="tab" data-tab="art">Art</div>
-            <div class="tab" data-tab="symbol">Symbol</div>
-            <div class="tab" data-tab="watermark">Wmark</div>
-            <div class="tab" data-tab="collector">Info</div>
-            <div class="tab" data-tab="library">Cards</div>
+            <div class="tab tab-cards" data-tab="library">Cards</div>
         </div>
+    </div>
+
+    <!-- ── Sidebar ── -->
+    <div id="sidebar">
 
         <!-- ── Frame panel ── -->
         <div id="panel-frame" class="panel active">
@@ -52,11 +48,11 @@
                 <div id="selectedPreview" class="dimtext">(Selected: none)</div>
                 <div class="row">
                     <button onclick="addFrame()">Add Frame</button>
-                    <button class="secondary" onclick="addFrame([{src:'/img/frames/maskRightHalf.png',name:'Right Half'}])">Right Half</button>
-                    <button class="secondary" onclick="addFrame([{src:'/img/frames/maskLeftHalf.png',name:'Left Half'}])">Left Half</button>
+                    <button class="secondary" onclick="addFrameWithMask('right','Right Half')">Right Half</button>
+                    <button class="secondary" onclick="addFrameWithMask('left','Left Half')">Left Half</button>
                 </div>
                 <div class="row">
-                    <button class="secondary" onclick="addFrame([{src:'/img/frames/maskMiddleThird.png',name:'Mid Third'}])">Middle Third</button>
+                    <button class="secondary" onclick="addFrameWithMask('middle','Mid Third')">Middle Third</button>
                 </div>
             </div>
 
@@ -75,13 +71,7 @@
                 <input type="url" placeholder="Via URL" oninput="imageURL(this.value, uploadFrameOption)">
             </div>
 
-            <div class="card-section">
-                <label><input type="checkbox" id="show-guidelines" onchange="drawCard()"> Show guidelines</label>
-                <label><input type="checkbox" id="highlight-transparencies" onchange="toggleTransparencies(this.checked)"> Highlight transparencies</label>
-                <label><input type="checkbox" id="rounded-corners" checked onchange="drawCard()"> Rounded corners on export</label>
-            </div>
-
-            <div class="card-section">
+<div class="card-section">
                 <button id="btn-download" onclick="downloadCard()">⬇ Download Card (PNG)</button>
             </div>
 
@@ -93,6 +83,13 @@
             <div class="card-section">
                 <div class="section-title">Select text area</div>
                 <div id="text-options"></div>
+            </div>
+            <div class="card-section">
+                <div class="section-title">Position</div>
+                <div class="row">
+                    <div><div class="dimtext">X</div><input id="text-x" type="number" step="1" oninput="textPositionEdited()"></div>
+                    <div><div class="dimtext">Y</div><input id="text-y" type="number" step="1" oninput="textPositionEdited()"></div>
+                </div>
             </div>
             <div class="card-section">
                 <div class="section-title">Edit text</div>
@@ -157,102 +154,6 @@ Use {i}...{/i} for italic"></textarea>
             </div>
         </div>
 
-        <!-- ── Set Symbol panel ── -->
-        <div id="panel-symbol" class="panel">
-            <div class="card-section">
-                <div class="section-title">Upload symbol</div>
-                <label class="drop-area">
-                    <span class="dimtext">Drag &amp; drop or click to upload symbol</span>
-                    <input type="file" accept=".png,.svg,.jpg,.jpeg,.bmp" class="file-input-hidden"
-                        onchange="uploadFiles(this.files, uploadSetSymbol, 'resetSetSymbol')">
-                </label>
-                <input type="url" placeholder="Via URL" oninput="imageURL(this.value, uploadSetSymbol, 'resetSetSymbol')">
-            </div>
-            <div class="card-section">
-                <div class="section-title">Or by set code + rarity</div>
-                <div class="row">
-                    <input id="set-symbol-code" type="text" placeholder="Set code (e.g. MH3)" oninput="fetchSetSymbol()">
-                    <input id="set-symbol-rarity" type="text" placeholder="Rarity (M C U R)" oninput="fetchSetSymbol()">
-                </div>
-                <select id="set-symbol-source" onchange="fetchSetSymbol()">
-                    <option value="cardconjurer">CardConjurer</option>
-                    <option value="gatherer">Gatherer</option>
-                    <option value="hexproof">Hexproof.io</option>
-                </select>
-            </div>
-            <div class="card-section">
-                <div class="section-title">Position / Scale</div>
-                <div class="row">
-                    <div><div class="dimtext">X</div><input id="setSymbol-x" type="number" value="0" oninput="setSymbolEdited()"></div>
-                    <div><div class="dimtext">Y</div><input id="setSymbol-y" type="number" value="0" oninput="setSymbolEdited()"></div>
-                    <div><div class="dimtext">Scale %</div><input id="setSymbol-zoom" type="number" value="100" step="0.1" oninput="setSymbolEdited()"></div>
-                </div>
-                <button class="secondary" onclick="resetSetSymbol()">Reset Position</button>
-            </div>
-        </div>
-
-        <!-- ── Watermark panel ── -->
-        <div id="panel-watermark" class="panel">
-            <div class="card-section">
-                <div class="section-title">Upload watermark</div>
-                <label class="drop-area">
-                    <span class="dimtext">Drag &amp; drop or click to upload watermark</span>
-                    <input type="file" accept=".png,.svg,.jpg,.jpeg,.bmp" class="file-input-hidden"
-                        onchange="uploadFiles(this.files, uploadWatermark)">
-                </label>
-                <input type="url" placeholder="Via URL" oninput="imageURL(this.value, uploadWatermark)">
-            </div>
-            <div class="card-section">
-                <div class="section-title">Opacity %</div>
-                <input id="watermark-opacity" type="number" value="40" min="0" max="100" step="1" oninput="watermarkEdited()">
-            </div>
-            <div class="card-section">
-                <div class="section-title">Position / Scale</div>
-                <div class="row">
-                    <div><div class="dimtext">X</div><input id="watermark-x" type="number" value="0" oninput="watermarkEdited()"></div>
-                    <div><div class="dimtext">Y</div><input id="watermark-y" type="number" value="0" oninput="watermarkEdited()"></div>
-                    <div><div class="dimtext">Scale %</div><input id="watermark-zoom" type="number" value="100" step="0.1" oninput="watermarkEdited()"></div>
-                </div>
-            </div>
-        </div>
-
-        <!-- ── Collector panel ── -->
-        <div id="panel-collector" class="panel">
-            <div class="card-section">
-                <div class="section-title">Collector Info</div>
-                <div class="row">
-                    <div><div class="dimtext">Set Code</div><input id="info-set" type="text" placeholder="MH3" oninput="collectorEdited()"></div>
-                    <div><div class="dimtext">Number</div><input id="info-number" type="text" placeholder="042" oninput="collectorEdited()"></div>
-                </div>
-                <div class="row">
-                    <div><div class="dimtext">Rarity</div>
-                        <select id="info-rarity" onchange="collectorEdited()">
-                            <option value="C">Common</option>
-                            <option value="U">Uncommon</option>
-                            <option value="R">Rare</option>
-                            <option value="M">Mythic Rare</option>
-                        </select>
-                    </div>
-                    <div><div class="dimtext">Year</div><input id="info-year" type="number" value="2024" oninput="collectorEdited()"></div>
-                </div>
-                <div><div class="dimtext">Artist</div><input id="art-artist" type="text" placeholder="Artist name" oninput="artistEdited(this.value)"></div>
-                <div><div class="dimtext">Language</div>
-                    <select id="info-language" onchange="collectorEdited()">
-                        <option value="EN">English</option>
-                        <option value="ES">Spanish</option>
-                        <option value="FR">French</option>
-                        <option value="DE">German</option>
-                        <option value="IT">Italian</option>
-                        <option value="PT">Portuguese</option>
-                        <option value="JA">Japanese</option>
-                        <option value="KO">Korean</option>
-                        <option value="ZHS">Chinese (Simplified)</option>
-                        <option value="ZHT">Chinese (Traditional)</option>
-                        <option value="RU">Russian</option>
-                    </select>
-                </div>
-            </div>
-        </div>
         <!-- ── Library panel ── -->
         <div id="panel-library" class="panel">
             <div class="card-section">

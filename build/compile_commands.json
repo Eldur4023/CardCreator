@@ -1,80 +1,80 @@
 [
 {
-  "directory": "/home/burnt/Github/Proxys/build",
-  "command": "/usr/bin/c++  -I/home/burnt/Github/Proxys/include -I/home/burnt/Github/Proxys/third_party -I/home/burnt/Github/Proxys/third_party/llhttp/include -O3 -DNDEBUG -std=gnu++20 -O2 -o CMakeFiles/proxys.dir/app/main.cpp.o -c /home/burnt/Github/Proxys/app/main.cpp",
-  "file": "/home/burnt/Github/Proxys/app/main.cpp",
+  "directory": "/home/burnt/Github/CardCreator/build",
+  "command": "/usr/bin/c++  -I/home/burnt/Github/CardCreator/include -I/home/burnt/Github/CardCreator/third_party -I/home/burnt/Github/CardCreator/third_party/llhttp/include -O3 -DNDEBUG -std=gnu++20 -O2 -o CMakeFiles/proxys.dir/app/main.cpp.o -c /home/burnt/Github/CardCreator/app/main.cpp",
+  "file": "/home/burnt/Github/CardCreator/app/main.cpp",
   "output": "CMakeFiles/proxys.dir/app/main.cpp.o"
 },
 {
-  "directory": "/home/burnt/Github/Proxys/build",
-  "command": "/usr/bin/c++  -I/home/burnt/Github/Proxys/include -I/home/burnt/Github/Proxys/third_party -I/home/burnt/Github/Proxys/third_party/llhttp/include -O3 -DNDEBUG -std=gnu++20 -O2 -o CMakeFiles/proxys.dir/src/app.cpp.o -c /home/burnt/Github/Proxys/src/app.cpp",
-  "file": "/home/burnt/Github/Proxys/src/app.cpp",
+  "directory": "/home/burnt/Github/CardCreator/build",
+  "command": "/usr/bin/c++  -I/home/burnt/Github/CardCreator/include -I/home/burnt/Github/CardCreator/third_party -I/home/burnt/Github/CardCreator/third_party/llhttp/include -O3 -DNDEBUG -std=gnu++20 -O2 -o CMakeFiles/proxys.dir/src/app.cpp.o -c /home/burnt/Github/CardCreator/src/app.cpp",
+  "file": "/home/burnt/Github/CardCreator/src/app.cpp",
   "output": "CMakeFiles/proxys.dir/src/app.cpp.o"
 },
 {
-  "directory": "/home/burnt/Github/Proxys/build",
-  "command": "/usr/bin/c++  -I/home/burnt/Github/Proxys/include -I/home/burnt/Github/Proxys/third_party -I/home/burnt/Github/Proxys/third_party/llhttp/include -O3 -DNDEBUG -std=gnu++20 -O2 -o CMakeFiles/proxys.dir/src/router.cpp.o -c /home/burnt/Github/Proxys/src/router.cpp",
-  "file": "/home/burnt/Github/Proxys/src/router.cpp",
+  "directory": "/home/burnt/Github/CardCreator/build",
+  "command": "/usr/bin/c++  -I/home/burnt/Github/CardCreator/include -I/home/burnt/Github/CardCreator/third_party -I/home/burnt/Github/CardCreator/third_party/llhttp/include -O3 -DNDEBUG -std=gnu++20 -O2 -o CMakeFiles/proxys.dir/src/router.cpp.o -c /home/burnt/Github/CardCreator/src/router.cpp",
+  "file": "/home/burnt/Github/CardCreator/src/router.cpp",
   "output": "CMakeFiles/proxys.dir/src/router.cpp.o"
 },
 {
-  "directory": "/home/burnt/Github/Proxys/build",
-  "command": "/usr/bin/c++  -I/home/burnt/Github/Proxys/include -I/home/burnt/Github/Proxys/third_party -I/home/burnt/Github/Proxys/third_party/llhttp/include -O3 -DNDEBUG -std=gnu++20 -O2 -o CMakeFiles/proxys.dir/src/core/event_loop.cpp.o -c /home/burnt/Github/Proxys/src/core/event_loop.cpp",
-  "file": "/home/burnt/Github/Proxys/src/core/event_loop.cpp",
+  "directory": "/home/burnt/Github/CardCreator/build",
+  "command": "/usr/bin/c++  -I/home/burnt/Github/CardCreator/include -I/home/burnt/Github/CardCreator/third_party -I/home/burnt/Github/CardCreator/third_party/llhttp/include -O3 -DNDEBUG -std=gnu++20 -O2 -o CMakeFiles/proxys.dir/src/core/event_loop.cpp.o -c /home/burnt/Github/CardCreator/src/core/event_loop.cpp",
+  "file": "/home/burnt/Github/CardCreator/src/core/event_loop.cpp",
   "output": "CMakeFiles/proxys.dir/src/core/event_loop.cpp.o"
 },
 {
-  "directory": "/home/burnt/Github/Proxys/build",
-  "command": "/usr/bin/c++  -I/home/burnt/Github/Proxys/include -I/home/burnt/Github/Proxys/third_party -I/home/burnt/Github/Proxys/third_party/llhttp/include -O3 -DNDEBUG -std=gnu++20 -O2 -o CMakeFiles/proxys.dir/src/core/io_uring_loop.cpp.o -c /home/burnt/Github/Proxys/src/core/io_uring_loop.cpp",
-  "file": "/home/burnt/Github/Proxys/src/core/io_uring_loop.cpp",
+  "directory": "/home/burnt/Github/CardCreator/build",
+  "command": "/usr/bin/c++  -I/home/burnt/Github/CardCreator/include -I/home/burnt/Github/CardCreator/third_party -I/home/burnt/Github/CardCreator/third_party/llhttp/include -O3 -DNDEBUG -std=gnu++20 -O2 -o CMakeFiles/proxys.dir/src/core/io_uring_loop.cpp.o -c /home/burnt/Github/CardCreator/src/core/io_uring_loop.cpp",
+  "file": "/home/burnt/Github/CardCreator/src/core/io_uring_loop.cpp",
   "output": "CMakeFiles/proxys.dir/src/core/io_uring_loop.cpp.o"
 },
 {
-  "directory": "/home/burnt/Github/Proxys/build",
-  "command": "/usr/bin/c++  -I/home/burnt/Github/Proxys/include -I/home/burnt/Github/Proxys/third_party -I/home/burnt/Github/Proxys/third_party/llhttp/include -O3 -DNDEBUG -std=gnu++20 -O2 -o CMakeFiles/proxys.dir/src/core/tcp_server.cpp.o -c /home/burnt/Github/Proxys/src/core/tcp_server.cpp",
-  "file": "/home/burnt/Github/Proxys/src/core/tcp_server.cpp",
+  "directory": "/home/burnt/Github/CardCreator/build",
+  "command": "/usr/bin/c++  -I/home/burnt/Github/CardCreator/include -I/home/burnt/Github/CardCreator/third_party -I/home/burnt/Github/CardCreator/third_party/llhttp/include -O3 -DNDEBUG -std=gnu++20 -O2 -o CMakeFiles/proxys.dir/src/core/tcp_server.cpp.o -c /home/burnt/Github/CardCreator/src/core/tcp_server.cpp",
+  "file": "/home/burnt/Github/CardCreator/src/core/tcp_server.cpp",
   "output": "CMakeFiles/proxys.dir/src/core/tcp_server.cpp.o"
 },
 {
-  "directory": "/home/burnt/Github/Proxys/build",
-  "command": "/usr/bin/c++  -I/home/burnt/Github/Proxys/include -I/home/burnt/Github/Proxys/third_party -I/home/burnt/Github/Proxys/third_party/llhttp/include -O3 -DNDEBUG -std=gnu++20 -O2 -o CMakeFiles/proxys.dir/src/http/http_parser.cpp.o -c /home/burnt/Github/Proxys/src/http/http_parser.cpp",
-  "file": "/home/burnt/Github/Proxys/src/http/http_parser.cpp",
+  "directory": "/home/burnt/Github/CardCreator/build",
+  "command": "/usr/bin/c++  -I/home/burnt/Github/CardCreator/include -I/home/burnt/Github/CardCreator/third_party -I/home/burnt/Github/CardCreator/third_party/llhttp/include -O3 -DNDEBUG -std=gnu++20 -O2 -o CMakeFiles/proxys.dir/src/http/http_parser.cpp.o -c /home/burnt/Github/CardCreator/src/http/http_parser.cpp",
+  "file": "/home/burnt/Github/CardCreator/src/http/http_parser.cpp",
   "output": "CMakeFiles/proxys.dir/src/http/http_parser.cpp.o"
 },
 {
-  "directory": "/home/burnt/Github/Proxys/build",
-  "command": "/usr/bin/c++  -I/home/burnt/Github/Proxys/include -I/home/burnt/Github/Proxys/third_party -I/home/burnt/Github/Proxys/third_party/llhttp/include -O3 -DNDEBUG -std=gnu++20 -O2 -o CMakeFiles/proxys.dir/src/http/http_connection.cpp.o -c /home/burnt/Github/Proxys/src/http/http_connection.cpp",
-  "file": "/home/burnt/Github/Proxys/src/http/http_connection.cpp",
+  "directory": "/home/burnt/Github/CardCreator/build",
+  "command": "/usr/bin/c++  -I/home/burnt/Github/CardCreator/include -I/home/burnt/Github/CardCreator/third_party -I/home/burnt/Github/CardCreator/third_party/llhttp/include -O3 -DNDEBUG -std=gnu++20 -O2 -o CMakeFiles/proxys.dir/src/http/http_connection.cpp.o -c /home/burnt/Github/CardCreator/src/http/http_connection.cpp",
+  "file": "/home/burnt/Github/CardCreator/src/http/http_connection.cpp",
   "output": "CMakeFiles/proxys.dir/src/http/http_connection.cpp.o"
 },
 {
-  "directory": "/home/burnt/Github/Proxys/build",
-  "command": "/usr/bin/c++  -I/home/burnt/Github/Proxys/include -I/home/burnt/Github/Proxys/third_party -I/home/burnt/Github/Proxys/third_party/llhttp/include -O3 -DNDEBUG -std=gnu++20 -O2 -o CMakeFiles/proxys.dir/src/http/http2_connection.cpp.o -c /home/burnt/Github/Proxys/src/http/http2_connection.cpp",
-  "file": "/home/burnt/Github/Proxys/src/http/http2_connection.cpp",
+  "directory": "/home/burnt/Github/CardCreator/build",
+  "command": "/usr/bin/c++  -I/home/burnt/Github/CardCreator/include -I/home/burnt/Github/CardCreator/third_party -I/home/burnt/Github/CardCreator/third_party/llhttp/include -O3 -DNDEBUG -std=gnu++20 -O2 -o CMakeFiles/proxys.dir/src/http/http2_connection.cpp.o -c /home/burnt/Github/CardCreator/src/http/http2_connection.cpp",
+  "file": "/home/burnt/Github/CardCreator/src/http/http2_connection.cpp",
   "output": "CMakeFiles/proxys.dir/src/http/http2_connection.cpp.o"
 },
 {
-  "directory": "/home/burnt/Github/Proxys/build",
-  "command": "/usr/bin/cc  -I/home/burnt/Github/Proxys/include -I/home/burnt/Github/Proxys/third_party -I/home/burnt/Github/Proxys/third_party/llhttp/include -O3 -DNDEBUG -O2 -o CMakeFiles/proxys.dir/third_party/llhttp/src/api.c.o -c /home/burnt/Github/Proxys/third_party/llhttp/src/api.c",
-  "file": "/home/burnt/Github/Proxys/third_party/llhttp/src/api.c",
+  "directory": "/home/burnt/Github/CardCreator/build",
+  "command": "/usr/bin/cc  -I/home/burnt/Github/CardCreator/include -I/home/burnt/Github/CardCreator/third_party -I/home/burnt/Github/CardCreator/third_party/llhttp/include -O3 -DNDEBUG -O2 -o CMakeFiles/proxys.dir/third_party/llhttp/src/api.c.o -c /home/burnt/Github/CardCreator/third_party/llhttp/src/api.c",
+  "file": "/home/burnt/Github/CardCreator/third_party/llhttp/src/api.c",
   "output": "CMakeFiles/proxys.dir/third_party/llhttp/src/api.c.o"
 },
 {
-  "directory": "/home/burnt/Github/Proxys/build",
-  "command": "/usr/bin/cc  -I/home/burnt/Github/Proxys/include -I/home/burnt/Github/Proxys/third_party -I/home/burnt/Github/Proxys/third_party/llhttp/include -O3 -DNDEBUG -O2 -o CMakeFiles/proxys.dir/third_party/llhttp/src/http.c.o -c /home/burnt/Github/Proxys/third_party/llhttp/src/http.c",
-  "file": "/home/burnt/Github/Proxys/third_party/llhttp/src/http.c",
+  "directory": "/home/burnt/Github/CardCreator/build",
+  "command": "/usr/bin/cc  -I/home/burnt/Github/CardCreator/include -I/home/burnt/Github/CardCreator/third_party -I/home/burnt/Github/CardCreator/third_party/llhttp/include -O3 -DNDEBUG -O2 -o CMakeFiles/proxys.dir/third_party/llhttp/src/http.c.o -c /home/burnt/Github/CardCreator/third_party/llhttp/src/http.c",
+  "file": "/home/burnt/Github/CardCreator/third_party/llhttp/src/http.c",
   "output": "CMakeFiles/proxys.dir/third_party/llhttp/src/http.c.o"
 },
 {
-  "directory": "/home/burnt/Github/Proxys/build",
-  "command": "/usr/bin/cc  -I/home/burnt/Github/Proxys/include -I/home/burnt/Github/Proxys/third_party -I/home/burnt/Github/Proxys/third_party/llhttp/include -O3 -DNDEBUG -O2 -o CMakeFiles/proxys.dir/third_party/llhttp/src/llhttp.c.o -c /home/burnt/Github/Proxys/third_party/llhttp/src/llhttp.c",
-  "file": "/home/burnt/Github/Proxys/third_party/llhttp/src/llhttp.c",
+  "directory": "/home/burnt/Github/CardCreator/build",
+  "command": "/usr/bin/cc  -I/home/burnt/Github/CardCreator/include -I/home/burnt/Github/CardCreator/third_party -I/home/burnt/Github/CardCreator/third_party/llhttp/include -O3 -DNDEBUG -O2 -o CMakeFiles/proxys.dir/third_party/llhttp/src/llhttp.c.o -c /home/burnt/Github/CardCreator/third_party/llhttp/src/llhttp.c",
+  "file": "/home/burnt/Github/CardCreator/third_party/llhttp/src/llhttp.c",
   "output": "CMakeFiles/proxys.dir/third_party/llhttp/src/llhttp.c.o"
 },
 {
-  "directory": "/home/burnt/Github/Proxys/build",
-  "command": "/usr/bin/c++  -I/home/burnt/Github/Proxys/include -I/home/burnt/Github/Proxys/third_party -I/home/burnt/Github/Proxys/third_party/llhttp/include -O3 -DNDEBUG -std=gnu++20 -O2 -o CMakeFiles/proxys.dir/third_party/simdjson.cpp.o -c /home/burnt/Github/Proxys/third_party/simdjson.cpp",
-  "file": "/home/burnt/Github/Proxys/third_party/simdjson.cpp",
+  "directory": "/home/burnt/Github/CardCreator/build",
+  "command": "/usr/bin/c++  -I/home/burnt/Github/CardCreator/include -I/home/burnt/Github/CardCreator/third_party -I/home/burnt/Github/CardCreator/third_party/llhttp/include -O3 -DNDEBUG -std=gnu++20 -O2 -o CMakeFiles/proxys.dir/third_party/simdjson.cpp.o -c /home/burnt/Github/CardCreator/third_party/simdjson.cpp",
+  "file": "/home/burnt/Github/CardCreator/third_party/simdjson.cpp",
   "output": "CMakeFiles/proxys.dir/third_party/simdjson.cpp.o"
 }
 ]

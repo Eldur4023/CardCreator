@@ -5,13 +5,13 @@
 # compile CXX with /usr/bin/c++
 C_DEFINES = 
 
-C_INCLUDES = -I/home/burnt/Github/Proxys/include -I/home/burnt/Github/Proxys/third_party -I/home/burnt/Github/Proxys/third_party/llhttp/include
+C_INCLUDES = -I/home/burnt/Github/CardCreator/include -I/home/burnt/Github/CardCreator/third_party -I/home/burnt/Github/CardCreator/third_party/llhttp/include
 
 C_FLAGS = -O3 -DNDEBUG -O2
 
 CXX_DEFINES = 
 
-CXX_INCLUDES = -I/home/burnt/Github/Proxys/include -I/home/burnt/Github/Proxys/third_party -I/home/burnt/Github/Proxys/third_party/llhttp/include
+CXX_INCLUDES = -I/home/burnt/Github/CardCreator/include -I/home/burnt/Github/CardCreator/third_party -I/home/burnt/Github/CardCreator/third_party/llhttp/include
 
 CXX_FLAGS = -O3 -DNDEBUG -std=gnu++20 -O2
 
