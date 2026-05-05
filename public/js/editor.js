@@ -398,6 +398,7 @@ function selectCategory(cat) {
     // Cleanup previous special category
     card.planeswalker = null;
     card.saga = null;
+    card.class = null;
     card.text = null;
     if (window.planeswalkerPreFrameContext)
         planeswalkerPreFrameContext.clearRect(0, 0, planeswalkerPreFrameCanvas.width, planeswalkerPreFrameCanvas.height);
@@ -405,6 +406,8 @@ function selectCategory(cat) {
         planeswalkerPostFrameContext.clearRect(0, 0, planeswalkerPostFrameCanvas.width, planeswalkerPostFrameCanvas.height);
     if (window.sagaContext)
         sagaContext.clearRect(0, 0, sagaCanvas.width, sagaCanvas.height);
+    if (window.classContext)
+        classContext.clearRect(0, 0, classCanvas.width, classCanvas.height);
     document.getElementById('special-editor').innerHTML = '';
     document.getElementById('text-options').innerHTML = '';
 
@@ -416,6 +419,9 @@ function selectCategory(cat) {
     } else if (cat === 'Saga') {
         loadSagaTextOptions();
         initSagaEditor();
+    } else if (cat === 'Class') {
+        loadClassTextOptions();
+        initClassEditor();
     } else {
         loadDefaultTextOptions();
         drawCard();
@@ -447,6 +453,9 @@ function selectSubcategory(sub) {
     } else if (_activeCat === 'Saga') {
         loadSagaTextOptions();
         initSagaEditor();
+    } else if (_activeCat === 'Class') {
+        loadClassTextOptions();
+        initClassEditor();
     }
 }
 
@@ -550,9 +559,9 @@ function uploadFrameOption(src) {
 var customCount = 0;
 
 const HALF_MASKS = {
-    right:  { src: '/img/frames/maskRightHalf.png',  name: 'Right Half' },
-    left:   { src: '/img/frames/maskLeftHalf.png',   name: 'Left Half'  },
-    middle: { src: '/img/frames/maskMiddleThird.png', name: 'Mid Third' },
+    right:  { src: '/img/maskRightHalf.png',  name: 'Right Half' },
+    left:   { src: '/img/maskLeftHalf.png',   name: 'Left Half'  },
+    middle: { src: '/img/maskMiddleThird.png', name: 'Mid Third' },
 };
 
 function addFrameWithMask(maskType, maskName) {
@@ -717,6 +726,11 @@ function _drawCard() {
     // 6. Saga chapter markers — AFTER watermark, BEFORE text
     if (window.sagaCanvas && card.saga) {
         cardContext.drawImage(sagaCanvas, 0, 0);
+    }
+
+    // 6b. Class level headers — same layer as saga
+    if (window.classCanvas && card.class) {
+        cardContext.drawImage(classCanvas, 0, 0);
     }
 
     // 7. Text
@@ -1667,6 +1681,135 @@ function drawSagaChapters() {
 
 function romanNumeral(n) {
     return ['', 'I', 'II', 'III', 'IV', 'V', 'VI'][n] ?? n;
+}
+
+// ── Class card editor ─────────────────────────────────────────────────────────
+
+var _classHeaderImg = null;
+
+function loadClassTextOptions() {
+    card.artBounds = { x: 0.0767, y: 0.1129, width: 0.4247, height: 0.3 };
+    loadTextOptions({
+        mana:    { name:'Mana Cost', text:'', y:0.048, width:0.9292, height:71/2100, oneLine:true, size:71/1638, align:'right', manaCost:true, manaSpacing:0 },
+        title:   { name:'Title',     text:'', x:0.0854, y:0.0522, width:0.8292, height:0.0543, oneLine:true, font:'belerenb', size:0.0381 },
+        type:    { name:'Type',      text:'', x:0.0854, y:0.8481, width:0.8292, height:0.0543, oneLine:true, font:'belerenb', size:0.0324 },
+        level0c: { name:'Level 1 - Text', text:'{i}(Gain the next level as a sorcery to add its ability.){/i}', x:0.5093, y:0.1129, width:0.404, height:0.2096, size:0.0305 },
+        level1a: { name:'Level 2 - Cost', text:'', x:0.5093, y:2, width:0.3967, height:0.0277, size:0.0277 },
+        level1b: { name:'Level 2 - Name', text:'', x:0.5093, y:2, width:0.3967, height:0.0281, size:0.0281, align:'right' },
+        level1c: { name:'Level 2 - Text', text:'', x:0.5093, y:2, width:0.404,  height:0.2091, size:0.0305 },
+        level2a: { name:'Level 3 - Cost', text:'', x:0.5093, y:2, width:0.3967, height:0.0277, size:0.0277 },
+        level2b: { name:'Level 3 - Name', text:'', x:0.5093, y:2, width:0.3967, height:0.0281, size:0.0281, align:'right' },
+        level2c: { name:'Level 3 - Text', text:'', x:0.5093, y:2, width:0.404,  height:0.2091, size:0.0305 },
+        level3a: { name:'Level 4 - Cost', text:'', x:0.5093, y:2, width:0.3967, height:0.0277, size:0.0277 },
+        level3b: { name:'Level 4 - Name', text:'', x:0.5093, y:2, width:0.3967, height:0.0281, size:0.0281, align:'right' },
+        level3c: { name:'Level 4 - Text', text:'', x:0.5093, y:2, width:0.404,  height:0.2091, size:0.0305 },
+    });
+}
+
+const CLASS_OVERLAY_LAYERS = [
+    { name: 'Pinline',     src: '/img/frames/Class/_ui/pinline.svg'     },
+    { name: 'Title Mask',  src: '/img/frames/Class/_ui/m15MaskTitle.png'},
+    { name: 'Type Mask',   src: '/img/frames/Saga/_ui/sagaMaskType.png' },
+    { name: 'Frame',       src: '/img/frames/Class/_ui/frame.svg'       },
+    { name: 'Text Left',   src: '/img/frames/Class/_ui/text.svg'        },
+    { name: 'Text Right',  src: '/img/frames/Class/_ui/textRight.png'   },
+    { name: 'Border',      src: '/img/frames/Class/_ui/border.svg'      },
+];
+
+function initClassEditor() {
+    sizeCanvas('class');
+
+    if (!card.class) {
+        card.class = { x: 0.5014, width: 0.422, count: 0 };
+    }
+
+    if (!_classHeaderImg) {
+        _classHeaderImg = new Image();
+        _classHeaderImg.crossOrigin = 'anonymous';
+        _classHeaderImg.onload = () => { classEdited(); drawCard(); };
+        _classHeaderImg.src = '/img/frames/Class/_ui/header.png';
+    }
+
+    _buildClassUI();
+    classEdited();
+}
+
+function _buildClassUI() {
+    const defaultHeights = [
+        Math.round(scaleHeight(card.text?.level0c?.height || 0.2096)),
+        Math.round(scaleHeight(card.text?.level1c?.height || 0.2091)),
+        Math.round(scaleHeight(card.text?.level2c?.height || 0.2091)),
+        0,
+    ];
+
+    document.getElementById('special-editor').innerHTML = `
+    <div class="card-section">
+        <div class="section-title">Class Levels</div>
+        ${[0,1,2,3].map(i => `
+        <div class="pw-ability-row">
+            <span class="dimtext" style="min-width:60px">Level ${i+1}</span>
+            <input type="number" id="class-height-${i}" placeholder="Height px" min="0" value="${defaultHeights[i]}" oninput="classEdited()" style="flex:1">
+        </div>`).join('')}
+    </div>`;
+}
+
+function classEdited() {
+    if (!card.class || !window.classCanvas) return;
+    const c = card.class;
+    c.count = 0;
+
+    let lastY = card.text?.level0c?.y ?? 0.1129;
+    const heightPx0 = parseInt(document.getElementById('class-height-0')?.value) || 0;
+    if (card.text?.level0c) card.text.level0c.height = heightPx0 / card.height;
+    lastY += (heightPx0 / card.height) + 0.0481;
+
+    for (let i = 1; i < 4; i++) {
+        const heightPx = parseInt(document.getElementById('class-height-' + i)?.value) || 0;
+        const height   = heightPx / card.height;
+        const ta = card.text?.['level' + i + 'a'];
+        const tb = card.text?.['level' + i + 'b'];
+        const tc = card.text?.['level' + i + 'c'];
+        if (!ta || !tb || !tc) continue;
+
+        if (height > 0) {
+            c.count++;
+            ta.y = lastY - 0.0361;
+            tb.y = lastY - 0.0361;
+            tc.y = lastY;
+            tc.height = height;
+            lastY += height + 0.0481;
+        } else {
+            ta.y = 2; tb.y = 2; tc.y = 2;
+        }
+    }
+
+    // Last active level fills remaining space
+    for (let i = 3; i >= 1; i--) {
+        const tc = card.text?.['level' + i + 'c'];
+        if (!tc || tc.y >= 2) continue;
+        const remaining = 0.8368 - tc.y;
+        tc.height = Math.max(0.05, remaining);
+        break;
+    }
+
+    const ctx = classContext;
+    ctx.clearRect(0, 0, classCanvas.width, classCanvas.height);
+
+    if (_classHeaderImg?.complete && _classHeaderImg.naturalWidth) {
+        for (let i = 1; i <= c.count; i++) {
+            const tc = card.text?.['level' + i + 'c'];
+            if (!tc || tc.y >= 2) continue;
+            ctx.drawImage(
+                _classHeaderImg,
+                scaleX(c.x),
+                scaleY(tc.y) - scaleHeight(0.0481),
+                scaleWidth(c.width),
+                scaleHeight(0.0481)
+            );
+        }
+    }
+
+    drawCard();
 }
 
 // ── Drag to reposition art ────────────────────────────────────────────────────
