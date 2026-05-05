@@ -1629,7 +1629,7 @@ function loadSagaTextOptions() {
         mana:     { name:'Mana Cost',    text:'', y:0.048,  width:0.9292, height:71/2100, oneLine:true, size:71/1638, align:'right', manaCost:true, manaSpacing:0 },
         title:    { name:'Title',        text:'', x:0.0854, y:0.0522, width:0.8292, height:0.0543, oneLine:true, font:'belerenb', size:0.0381 },
         type:     { name:'Type',         text:'', x:0.0854, y:0.855,  width:0.8292, height:0.0543, oneLine:true, font:'belerenb', size:0.0324 },
-        reminder: { name:'Reminder Text',text:'', x:0.248,  y:0.160,  width:0.666,  height:0.0572, size:0.0267, font:'mplantini' },
+        reminder: { name:'Reminder Text',text:'{i}(As this Saga enters and after your draw step, add a lore counter. Sacrifice after III.){/i}', x:0.090,  y:0.160,  width:0.400,  height:0.120, size:0.0267, font:'mplantini' },
         ability0: { name:'Chapter 1',    text:'', x:0.248,  y:0.2896, width:0.666,  height:0.1786, size:0.0324 },
         ability1: { name:'Chapter 2',    text:'', x:0.248,  y:0.4682, width:0.666,  height:0.1786, size:0.0324 },
         ability2: { name:'Chapter 3',    text:'', x:0.248,  y:0.6468, width:0.666,  height:0.1786, size:0.0324 },
