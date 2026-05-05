@@ -351,100 +351,143 @@ function artistEdited(value) {
     drawCard();
 }
 
-// ── Frame picker ──────────────────────────────────────────────────────────────
-var availableFrames  = [];
-var selectedFrame    = null;
+// ── Frame browser ─────────────────────────────────────────────────────────────
+var _frameTree        = {};
+var _activeCat        = null;
+var _activeSub        = null;
+var selectedFrame     = null;
 var selectedMaskIndex = -1;
-var replacementMasks = {};
 
-function loadFramePacks(packs) {
-    const select = document.getElementById('selectFramePack');
-    select.innerHTML = '';
-    packs.forEach(pack => {
-        const opt = document.createElement('option');
-        if (pack.disabled) {
-            opt.disabled = true;
-            opt.textContent = pack.name;
-        } else {
-            opt.value = pack.value;
-            opt.textContent = pack.name;
-        }
-        select.appendChild(opt);
+async function initFrameBrowser() {
+    try {
+        const res  = await fetch('/api/frames');
+        _frameTree = await res.json();
+    } catch(e) {
+        _frameTree = {};
+    }
+    renderCategories();
+}
+
+function renderCategories() {
+    const el = document.getElementById('frame-categories');
+    el.innerHTML = '';
+    const cats = Object.keys(_frameTree);
+    if (!cats.length) {
+        el.innerHTML = '<div class="dimtext" style="padding:4px">No hay frames. Crea carpetas en assets/img/frames/</div>';
+        return;
+    }
+    cats.forEach(cat => {
+        const btn = document.createElement('button');
+        btn.className   = 'secondary cat-btn' + (cat === _activeCat ? ' active-cat' : '');
+        btn.textContent = cat;
+        btn.onclick     = () => selectCategory(cat);
+        el.appendChild(btn);
     });
-    // auto-load first enabled pack
-    const first = packs.find(p => !p.disabled);
-    if (first) {
-        select.value = first.value;
-        loadScript('/js/frames/pack' + first.value + '.js').then(() => {
-            // Auto-click Load Frame Version whenever a new group is selected
-            // (not just on initial load when card.text is null)
-            const btn = document.querySelector('#loadFrameVersion');
-            if (btn && !btn.disabled) btn.click();
-        });
+    if (!_activeCat || !_frameTree[_activeCat]) selectCategory(cats[0]);
+    else renderSubcategories();
+}
+
+function selectCategory(cat) {
+    const leaving = _activeCat;
+    _activeCat = cat;
+    _activeSub = null;
+    document.querySelectorAll('.cat-btn').forEach(b => b.classList.toggle('active-cat', b.textContent === cat));
+    const subs = Object.keys(_frameTree[cat] || {});
+    _activeSub = subs[0] || null;
+
+    // Cleanup previous special category
+    card.planeswalker = null;
+    card.saga = null;
+    card.text = null;
+    if (window.planeswalkerPreFrameContext)
+        planeswalkerPreFrameContext.clearRect(0, 0, planeswalkerPreFrameCanvas.width, planeswalkerPreFrameCanvas.height);
+    if (window.planeswalkerPostFrameContext)
+        planeswalkerPostFrameContext.clearRect(0, 0, planeswalkerPostFrameCanvas.width, planeswalkerPostFrameCanvas.height);
+    if (window.sagaContext)
+        sagaContext.clearRect(0, 0, sagaCanvas.width, sagaCanvas.height);
+    document.getElementById('special-editor').innerHTML = '';
+    document.getElementById('text-options').innerHTML = '';
+
+    renderSubcategories();
+
+    if (cat === 'Planeswalker') {
+        loadDefaultTextOptions();
+        initPlaneswalkerEditor();
+    } else if (cat === 'Saga') {
+        loadSagaTextOptions();
+        initSagaEditor();
+    } else {
+        loadDefaultTextOptions();
+        drawCard();
     }
 }
 
-function loadFramePack() {
-    const picker = document.getElementById('frame-picker');
-    const mPicker = document.getElementById('mask-picker');
-    picker.innerHTML  = '';
-    mPicker.innerHTML = '';
-    selectedFrame     = availableFrames[0] || null;
-    selectedMaskIndex = -1;
+function renderSubcategories() {
+    const el   = document.getElementById('frame-subcategories');
+    el.innerHTML = '';
+    if (!_activeCat) return;
+    const subs = Object.keys(_frameTree[_activeCat] || {});
+    subs.forEach(sub => {
+        const btn = document.createElement('button');
+        btn.className   = 'secondary sub-btn' + (sub === _activeSub ? ' active-sub' : '');
+        btn.textContent = sub;
+        btn.onclick     = () => selectSubcategory(sub);
+        el.appendChild(btn);
+    });
+    renderFramePicker();
+}
 
-    availableFrames.forEach((frame, i) => {
-        const wrap  = document.createElement('div');
+function selectSubcategory(sub) {
+    _activeSub = sub;
+    document.querySelectorAll('.sub-btn').forEach(b => b.classList.toggle('active-sub', b.textContent === sub));
+    renderFramePicker();
+    if (_activeCat === 'Planeswalker') {
+        loadDefaultTextOptions();
+        initPlaneswalkerEditor();
+    } else if (_activeCat === 'Saga') {
+        loadSagaTextOptions();
+        initSagaEditor();
+    }
+}
+
+function renderFramePicker() {
+    const picker = document.getElementById('frame-picker');
+    picker.innerHTML = '';
+    selectedFrame = null;
+    updateSelectedPreview();
+    if (!_activeCat || !_activeSub) return;
+
+    const entries = _frameTree[_activeCat][_activeSub] || [];
+    entries.forEach(entry => {
+        const filename = entry.file;
+        const src      = `/img/frames/${_activeCat}/${_activeSub}/${filename}`;
+        const name     = entry.name || filename.replace(/\.[^.]+$/, '');
+        const meta     = Object.assign({}, entry);  // carries all JSON fields
+
+        const wrap = document.createElement('div');
         wrap.className = 'frame-thumb-wrap';
 
         const img = document.createElement('img');
-        img.className = 'frame-thumb' + (i === 0 ? ' selected' : '');
-        img.src   = frame.src;
-        img.title = frame.name;
-        img.alt   = frame.name;
-        img.onerror = () => { img.style.background = '#333'; };
-        img.onclick = () => {
-            selectedFrame = frame;
+        img.className = 'frame-thumb';
+        img.src       = src;
+        img.title     = name;
+        img.alt       = name;
+        img.onerror   = () => { img.style.background = '#333'; };
+        img.onclick   = () => {
+            selectedFrame = { name, src, masks: [], meta };
             picker.querySelectorAll('.frame-thumb').forEach(t => t.classList.remove('selected'));
             img.classList.add('selected');
-            loadMaskPicker(frame);
             updateSelectedPreview();
         };
-        img.ondblclick = () => { selectedFrame = frame; addFrame(); };
+        img.ondblclick = () => { selectedFrame = { name, src, masks: [], meta }; addFrame(); };
 
         const label = document.createElement('div');
         label.className   = 'frame-thumb-label';
-        label.textContent = frame.name;
+        label.textContent = name;
 
         wrap.appendChild(img);
         wrap.appendChild(label);
         picker.appendChild(wrap);
-    });
-
-    loadMaskPicker(selectedFrame);
-    updateSelectedPreview();
-}
-
-function loadMaskPicker(frame) {
-    const mPicker = document.getElementById('mask-picker');
-    mPicker.innerHTML = '';
-    selectedMaskIndex = -1;
-    if (!frame || !frame.masks || !frame.masks.length) return;
-
-    frame.masks.forEach((mask, i) => {
-        const img = document.createElement('img');
-        img.className = 'mask-thumb';
-        img.src   = mask.src;
-        img.title = mask.name;
-        img.alt   = mask.name;
-        img.onerror = () => { img.style.background = '#555'; img.style.border = '1px dashed #888'; };
-        img.onclick = () => {
-            selectedMaskIndex = i;
-            mPicker.querySelectorAll('.mask-thumb').forEach(t => t.classList.remove('selected'));
-            img.classList.add('selected');
-            updateSelectedPreview();
-        };
-        img.ondblclick = () => { selectedMaskIndex = i; addFrame(); };
-        mPicker.appendChild(img);
     });
 }
 
@@ -481,17 +524,18 @@ function addFrame(extraMasks) {
     frameImage.onload = () => drawCard();
 
     const frameObj = {
-        name: selectedFrame.name,
-        src: selectedFrame.src,
-        image: frameImage,
-        masks: maskImages,
-        opacity: 100,
-        mode: 'source-over',
-        preserveAlpha: false,
-        bounds: selectedFrame.bounds || null,
-        hslAdjust: { hue: 0, saturation: 0, lightness: 0 },
-        colorOverlay: '#000000',
+        name:                selectedFrame.name,
+        src:                 selectedFrame.src,
+        image:               frameImage,
+        masks:               maskImages,
+        opacity:             100,
+        mode:                'source-over',
+        preserveAlpha:       false,
+        bounds:              selectedFrame.bounds || null,
+        hslAdjust:           { hue: 0, saturation: 0, lightness: 0 },
+        colorOverlay:        '#000000',
         colorOverlayEnabled: false,
+        meta:                selectedFrame.meta || {},
     };
 
     card.frames.push(frameObj);
@@ -576,46 +620,27 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     initCanvases();
+    loadDefaultTextOptions();
+    initFrameBrowser();
     drawCard();
     initArtDrag();
-
-    // Load default frame (M15 Standard) so text areas are available immediately
-    loadScript('/js/frames/groupStandard-3.js');
 });
 
-function toggleCollapse(el) {
-    el.classList.toggle('open');
-}
-
-// ── Dynamic script loading ────────────────────────────────────────────────────
-var loadingScript = false;
-
-function loadScript(url) {
-    // Intercept CardConjurer version scripts — handle natively
-    if (url === '/js/frames/versionPlaneswalker.js') {
-        if (!loadedVersions.includes(url)) loadedVersions.push(url);
-        setTimeout(() => initPlaneswalkerEditor(), 0);
-        return Promise.resolve();
-    }
-    if (url === '/js/frames/versionSaga.js') {
-        if (!loadedVersions.includes(url)) loadedVersions.push(url);
-        setTimeout(() => initSagaEditor(), 0);
-        return Promise.resolve();
-    }
-
-    return new Promise(resolve => {
-        const existing = document.querySelector(`script[src="${url}"]`);
-        if (existing) existing.remove();
-        const s = document.createElement('script');
-        s.src = url;
-        s.onload  = () => resolve();
-        s.onerror = () => resolve();
-        document.body.appendChild(s);
+function loadDefaultTextOptions() {
+    card.artBounds       = { x: 0.0767, y: 0.1129, width: 0.8476, height: 0.4429 };
+    card.setSymbolBounds = { x: 0.9213, y: 0.5910, width: 0.12, height: 0.0410, horizontal: 'right' };
+    card.watermarkBounds = { x: 0.5, y: 0.7762, width: 0.75, height: 0.2305 };
+    loadTextOptions({
+        mana:  { name: 'Mana Cost',        text: '', y: 0.048,  width: 0.9292, height: 71/2100, oneLine: true, size: 71/1638, align: 'right', manaCost: true, manaSpacing: 0 },
+        title: { name: 'Title',             text: '', x: 0.0854, y: 0.0522, width: 0.8292, height: 0.0543, oneLine: true, font: 'belerenb', size: 0.0381 },
+        type:  { name: 'Type',              text: '', x: 0.0854, y: 0.574,  width: 0.8292, height: 0.0543, oneLine: true, font: 'belerenb', size: 0.0324 },
+        rules: { name: 'Rules Text',        text: '', x: 0.086,  y: 0.638,  width: 0.828,  height: 0.2875, size: 0.0362 },
+        pt:    { name: 'Power/Toughness',   text: '', x: 0.7928, y: 0.902,  width: 0.1367, height: 0.0372, size: 0.0372, font: 'belerenbsc', oneLine: true, align: 'center' },
     });
 }
 
-function handleAutoLoad() {
-    // handled automatically in pack scripts via #loadFrameVersion.onclick
+function toggleCollapse(el) {
+    el.classList.toggle('open');
 }
 
 // ── File upload helpers ───────────────────────────────────────────────────────
@@ -666,7 +691,7 @@ function drawCard() {
 
 function _drawCard() {
     drawPending = false;
-    if (!cardCanvas || !cardContext) return;
+    if (!window.cardCanvas || !window.cardContext) return;
 
     cardContext.clearRect(0, 0, cardCanvas.width, cardCanvas.height);
 
@@ -1278,16 +1303,6 @@ function downloadCard() {
     link.click();
 }
 
-// ── Version script compat layer ───────────────────────────────────────────────
-var loadedVersions = [];
-function setImageUrl(img, url) { img.crossOrigin = 'anonymous'; img.src = url; }
-function drawTextBuffer() { drawCard(); }
-function notify() {}                          // CardConjurer UI notification stub
-function bottomInfoEdited() { drawCard(); }   // collector info changed
-function classEdited() {}                     // Class card type (not implemented)
-function drawNewGuidelines() {}               // alternate guidelines stub
-function getStandardWidth()  { return card.width; }
-function getStandardHeight() { return card.height; }
 
 // ── Planeswalker editor ───────────────────────────────────────────────────────
 // Layout table: [tall][count-1][abilityIndex] — Y centers for loyalty badges
@@ -1322,23 +1337,30 @@ function initPlaneswalkerEditor() {
         _pwDarkToLight.onload = () => planeswalkerEdited();
         _pwTextMask.onload    = () => { _syncPlaneswalkerInputs(); planeswalkerEdited(); };
     }
-    const isTall      = card.version.includes('Tall') || card.version.includes('Compleated');
-    const isSDCC      = card.version === 'planeswalkerSDCC15';
-    const imgFolder   = isSDCC ? '/img/frames/planeswalker/sdcc15' : '/img/frames/planeswalker';
-    const imgExt      = isSDCC ? 'svg' : 'png';
+    const isTall      = _activeSub && (_activeSub.toLowerCase().includes('tall') || _activeSub.toLowerCase().includes('compleated'));
+    const uiFolder    = '/img/frames/Planeswalker/_ui';
 
-    console.log('[PW init] version=', card.version, 'isTall=', isTall, 'card.text=', card.text);
-
-    _pwPlusIcon.src    = `${imgFolder}/planeswalkerPlus.${imgExt}`;
-    _pwMinusIcon.src   = `${imgFolder}/planeswalkerMinus.${imgExt}`;
-    _pwNeutralIcon.src = `${imgFolder}/planeswalkerNeutral.${imgExt}`;
-    _pwLightToDark.src = `${imgFolder}/abilityLineOdd.${imgExt}`;
-    _pwDarkToLight.src = `${imgFolder}/abilityLineEven.${imgExt}`;
+    _pwPlusIcon.src    = `${uiFolder}/planeswalkerPlus.png`;
+    _pwMinusIcon.src   = `${uiFolder}/planeswalkerMinus.png`;
+    _pwNeutralIcon.src = `${uiFolder}/planeswalkerNeutral.png`;
+    _pwLightToDark.src = `${uiFolder}/abilityLineOdd.png`;
+    _pwDarkToLight.src = `${uiFolder}/abilityLineEven.png`;
     const maskSrc      = isTall
-        ? '/img/frames/planeswalker/tall/planeswalkerTallMaskRules.png'
-        : '/img/frames/planeswalker/text.svg';
-    console.log('[PW init] maskSrc=', maskSrc, 'current=', _pwTextMask.src);
+        ? `${uiFolder}/planeswalkerTallMaskRules.png`
+        : `${uiFolder}/text.svg`;
     _pwTextMask.src    = maskSrc;
+
+    // Load planeswalker text areas (ability slots + loyalty)
+    loadTextOptions({
+        mana:     { name:'Mana Cost',  text:'', y:0.048,  width:0.9292, height:71/2100, oneLine:true, size:71/1638, align:'right', manaCost:true, manaSpacing:0 },
+        title:    { name:'Title',      text:'', x:0.0854, y:0.0522, width:0.8292, height:0.0543, oneLine:true, font:'belerenb', size:0.0381 },
+        type:     { name:'Type',       text:'', x:0.0854, y:0.574,  width:0.8292, height:0.0543, oneLine:true, font:'belerenb', size:0.0324 },
+        loyalty:  { name:'Loyalty',    text:'', x:0.7928, y:0.902,  width:0.1367, height:0.0372, size:0.0372, font:'belerenbsc', oneLine:true, align:'center' },
+        ability0: { name:'Ability 1',  text:'', x:0.1581, y:0.6239, width:0.766,  height:0.0695, size:0.0324 },
+        ability1: { name:'Ability 2',  text:'', x:0.1581, y:0.6934, width:0.766,  height:0.0695, size:0.0324 },
+        ability2: { name:'Ability 3',  text:'', x:0.1581, y:0.7629, width:0.766,  height:0.0695, size:0.0324 },
+        ability3: { name:'Ability 4',  text:'', x:0.1581, y:0.8324, width:0.766,  height:0.0695, size:0.0324 },
+    });
 
     _buildPlaneswalkerUI();
     _syncPlaneswalkerInputs();
@@ -1465,7 +1487,7 @@ function planeswalkerEdited() {
     postCtx.textAlign    = 'center';
     postCtx.textBaseline = 'alphabetic';
 
-    const isTall = card.version.includes('Tall') || card.version.includes('Compleated');
+    const isTall = _activeSub && (_activeSub.toLowerCase().includes('tall') || _activeSub.toLowerCase().includes('compleated'));
     const layout = (PW_ABILITY_LAYOUT[isTall ? 1 : 0][pw.count - 1]) ?? PW_ABILITY_LAYOUT[0][2];
     console.log('[PW edit] pw.count=', pw.count, 'isTall=', isTall, 'layout=', layout,
         'mask complete=', _pwTextMask.complete, 'mask naturalW=', _pwTextMask.naturalWidth, 'mask src=', _pwTextMask.src);
@@ -1510,6 +1532,20 @@ function invertPlaneswalkerColors() {
 }
 
 // ── Saga editor ───────────────────────────────────────────────────────────────
+function loadSagaTextOptions() {
+    card.artBounds = { x: 0.0767, y: 0.1129, width: 0.8476, height: 0.4429 };
+    loadTextOptions({
+        mana:     { name:'Mana Cost',    text:'', y:0.048,  width:0.9292, height:71/2100, oneLine:true, size:71/1638, align:'right', manaCost:true, manaSpacing:0 },
+        title:    { name:'Title',        text:'', x:0.0854, y:0.0522, width:0.8292, height:0.0543, oneLine:true, font:'belerenb', size:0.0381 },
+        type:     { name:'Type',         text:'', x:0.0854, y:0.855,  width:0.8292, height:0.0543, oneLine:true, font:'belerenb', size:0.0324 },
+        reminder: { name:'Reminder Text',text:'', x:0.248,  y:0.160,  width:0.666,  height:0.0572, size:0.0267, font:'mplantini' },
+        ability0: { name:'Chapter 1',    text:'', x:0.248,  y:0.2896, width:0.666,  height:0.1786, size:0.0324 },
+        ability1: { name:'Chapter 2',    text:'', x:0.248,  y:0.4682, width:0.666,  height:0.1786, size:0.0324 },
+        ability2: { name:'Chapter 3',    text:'', x:0.248,  y:0.6468, width:0.666,  height:0.1786, size:0.0324 },
+        ability3: { name:'Chapter 4',    text:'', x:0.248,  y:0.8254, width:0.666,  height:0,      size:0.0324 },
+    });
+}
+
 function initSagaEditor() {
     sizeCanvas('saga');
 
@@ -1521,8 +1557,8 @@ function initSagaEditor() {
         window._sagaImagesLoaded = true;
         window.sagaChapterImg = new Image(); sagaChapterImg.crossOrigin = 'anonymous'; sagaChapterImg.onload = () => { drawSagaChapters(); drawCard(); };
         window.sagaDividerImg = new Image(); sagaDividerImg.crossOrigin = 'anonymous'; sagaDividerImg.onload = () => { drawSagaChapters(); drawCard(); };
-        sagaChapterImg.src = '/img/frames/saga/sagaChapter.png';
-        sagaDividerImg.src = '/img/frames/saga/sagaDivider.png';
+        sagaChapterImg.src = '/img/frames/Saga/_ui/sagaChapter.png';
+        sagaDividerImg.src = '/img/frames/Saga/_ui/sagaDivider.png';
     }
 
     _buildSagaUI();

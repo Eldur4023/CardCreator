@@ -23,36 +23,17 @@
 
         <!-- ── Frame panel ── -->
         <div id="panel-frame" class="panel active">
-            <div class="card-section">
-                <div class="section-title">Frame Type</div>
-                <select id="selectFrameGroup" onchange="loadScript('/js/frames/group' + this.value + '.js')">
-                    <option disabled selected>— Select Frame Type —</option>
-                    <option value="Token-2">Tokens</option>
-                    <option value="Saga-1">Sagas</option>
-                    <option value="Planeswalker">Planeswalkers</option>
-                    <option value="Showcase-5">Showcase</option>
-                    <option value="Textless-4">Textless / Fullart</option>
-                </select>
-                <select id="selectFramePack" onchange="loadScript('/js/frames/pack' + this.value + '.js').then(() => { if (document.getElementById('autoLoadFrameVersion')?.checked) { const btn = document.querySelector('#loadFrameVersion'); if (btn && !btn.disabled) btn.click(); } })"></select>
-                <div class="row">
-                    <button id="loadFrameVersion" disabled>Load Frame Version</button>
-                    <label><input id="autoLoadFrameVersion" type="checkbox" checked onchange="handleAutoLoad()"> Auto</label>
-                </div>
-            </div>
 
             <div class="card-section">
-                <div class="section-title">Frame Picker</div>
+                <div id="frame-categories"></div>
+                <div id="frame-subcategories"></div>
                 <div id="frame-picker"></div>
-                <div class="section-title" style="margin-top:4px">Mask</div>
-                <div id="mask-picker"></div>
                 <div id="selectedPreview" class="dimtext">(Selected: none)</div>
                 <div class="row">
                     <button onclick="addFrame()">Add Frame</button>
                     <button class="secondary" onclick="addFrameWithMask('right','Right Half')">Right Half</button>
                     <button class="secondary" onclick="addFrameWithMask('left','Left Half')">Left Half</button>
-                </div>
-                <div class="row">
-                    <button class="secondary" onclick="addFrameWithMask('middle','Mid Third')">Middle Third</button>
+                    <button class="secondary" onclick="addFrameWithMask('middle','Mid Third')">Mid Third</button>
                 </div>
             </div>
 
@@ -71,7 +52,7 @@
                 <input type="url" placeholder="Via URL" oninput="imageURL(this.value, uploadFrameOption)">
             </div>
 
-<div class="card-section">
+            <div class="card-section">
                 <button id="btn-download" onclick="downloadCard()">⬇ Download Card (PNG)</button>
             </div>
 

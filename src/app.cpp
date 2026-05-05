@@ -251,8 +251,13 @@ Task<void> App::handle_request(Request& req, Response& res) {
     req.container = &container_;
 
     // Static file mounts bypass the middleware chain.
+    // But if the router has an explicit match for this path, let the router
+    // handle it — this prevents the SPA fallback from swallowing API routes.
     if (req.method == "GET" || req.method == "HEAD") {
-        if (try_serve_static(static_mounts_, req, res)) co_return;
+        auto probe = router_.match(req.method, req.path);
+        if (!probe.found) {
+            if (try_serve_static(static_mounts_, req, res)) co_return;
+        }
     }
 
     // ── Async middleware chain ─────────────────────────────────────────────
