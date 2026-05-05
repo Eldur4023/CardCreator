@@ -1,0 +1,29 @@
+#pragma once
+
+// Single include for the entire library.
+// #include <osodio/osodio.hpp>  — that's all you need.
+
+#include "cancel.hpp"
+#include "types.hpp"
+#include "task.hpp"
+#include "request.hpp"
+#include "response.hpp"
+#include "router.hpp"
+#include "app.hpp"
+#include "schema.hpp"
+#include "validation.hpp"
+#include "handler_traits.hpp"
+#include "middleware.hpp"
+#include "openapi.hpp"
+#include "errors.hpp"
+#include "defer.hpp"
+#include "di.hpp"
+#include "group.hpp"
+#include "sse.hpp"
+#include "multipart.hpp"
+#include "websocket.hpp"
+#include "metrics.hpp"
+#ifdef OSODIO_HAS_TLS
+#  include "jwt.hpp"
+#endif
+#include "testing.hpp"
