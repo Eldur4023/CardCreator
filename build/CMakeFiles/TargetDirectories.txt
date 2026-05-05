@@ -1,3 +1,0 @@
-/home/burnt/Github/CardCreator/build/CMakeFiles/proxys.dir
-/home/burnt/Github/CardCreator/build/CMakeFiles/edit_cache.dir
-/home/burnt/Github/CardCreator/build/CMakeFiles/rebuild_cache.dir
