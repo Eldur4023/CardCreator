@@ -5,6 +5,7 @@
 #include <fstream>
 #include <sstream>
 #include <nlohmann/json.hpp>
+#include <chrono>
 
 namespace fs = std::filesystem;
 using json   = nlohmann::json;
@@ -53,6 +54,30 @@ static json scan_dir(const fs::path& dir) {
     return result;
 }
 
+static const std::string LIBRARY_PATH = "./data/library.json";
+static const std::string DECKS_PATH   = "./data/decks.json";
+
+static json file_read_array(const std::string& path) {
+    if (!fs::exists(path)) return json::array();
+    try {
+        std::ifstream f(path);
+        std::string s((std::istreambuf_iterator<char>(f)), {});
+        auto j = json::parse(s);
+        return j.is_array() ? j : json::array();
+    } catch (...) { return json::array(); }
+}
+
+static void file_write(const std::string& path, const json& arr) {
+    fs::create_directories("./data");
+    std::ofstream f(path);
+    f << arr.dump();
+}
+
+static json library_read()               { return file_read_array(LIBRARY_PATH); }
+static void library_write(const json& a) { file_write(LIBRARY_PATH, a); }
+static json decks_read()                 { return file_read_array(DECKS_PATH); }
+static void decks_write(const json& a)   { file_write(DECKS_PATH, a); }
+
 int main() {
     osodio::App app;
 
@@ -90,6 +115,109 @@ int main() {
         }
 
         res.json(root);
+    });
+
+    // Library API
+    app.get("/api/library", [](osodio::Request&, osodio::Response& res) {
+        res.json(library_read());
+    });
+
+    app.post("/api/library", [](osodio::Request& req, osodio::Response& res) {
+        try {
+            json entry = json::parse(req.body);
+            auto cards = library_read();
+            cards.insert(cards.begin(), entry);
+            library_write(cards);
+            res.json(entry);
+        } catch (...) {
+            res.status(400).json({ {"error", "invalid json"} });
+        }
+    });
+
+    app.del("/api/library/:id", [](osodio::Request& req, osodio::Response& res) {
+        const std::string id = req.params.count("id") ? req.params.at("id") : "";
+        auto cards = library_read();
+        auto it = std::remove_if(cards.begin(), cards.end(),
+            [&](const json& c){ return c.value("id", "") == id; });
+        cards.erase(it, cards.end());
+        library_write(cards);
+        res.json({ {"ok", true} });
+    });
+
+    // Decks API
+    app.get("/api/decks", [](osodio::Request&, osodio::Response& res) {
+        res.json(decks_read());
+    });
+
+    app.post("/api/decks", [](osodio::Request& req, osodio::Response& res) {
+        try {
+            json body  = json::parse(req.body);
+            std::string name = body.value("name", "");
+            if (name.empty()) { res.status(400).json({{"error","name required"}}); return; }
+            json deck  = {
+                {"id",        std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                  std::chrono::system_clock::now().time_since_epoch()).count())},
+                {"name",      name},
+                {"createdAt", std::chrono::duration_cast<std::chrono::milliseconds>(
+                                  std::chrono::system_clock::now().time_since_epoch()).count()},
+                {"cards",     json::array()}
+            };
+            auto decks = decks_read();
+            decks.push_back(deck);
+            decks_write(decks);
+            res.json(deck);
+        } catch (...) {
+            res.status(400).json({{"error","invalid json"}});
+        }
+    });
+
+    app.del("/api/decks/:id", [](osodio::Request& req, osodio::Response& res) {
+        const std::string id = req.params.count("id") ? req.params.at("id") : "";
+        auto decks = decks_read();
+        auto it = std::remove_if(decks.begin(), decks.end(),
+            [&](const json& d){ return d.value("id","") == id; });
+        decks.erase(it, decks.end());
+        decks_write(decks);
+        res.json({{"ok", true}});
+    });
+
+    // PUT /api/decks/:id/cards/:cardId  → add card to deck
+    app.put("/api/decks/:id/cards/:cardId", [](osodio::Request& req, osodio::Response& res) {
+        const std::string deckId   = req.params.count("id")     ? req.params.at("id")     : "";
+        const std::string cardId   = req.params.count("cardId") ? req.params.at("cardId") : "";
+        auto decks = decks_read();
+        bool found = false;
+        for (auto& d : decks) {
+            if (d.value("id","") != deckId) continue;
+            auto& cards = d["cards"];
+            bool already = false;
+            for (auto& c : cards) if (c.get<std::string>() == cardId) { already = true; break; }
+            if (!already) cards.push_back(cardId);
+            found = true;
+            break;
+        }
+        if (!found) { res.status(404).json({{"error","deck not found"}}); return; }
+        decks_write(decks);
+        res.json({{"ok", true}});
+    });
+
+    // DELETE /api/decks/:id/cards/:cardId  → remove card from deck
+    app.del("/api/decks/:id/cards/:cardId", [](osodio::Request& req, osodio::Response& res) {
+        const std::string deckId = req.params.count("id")     ? req.params.at("id")     : "";
+        const std::string cardId = req.params.count("cardId") ? req.params.at("cardId") : "";
+        auto decks = decks_read();
+        bool found = false;
+        for (auto& d : decks) {
+            if (d.value("id","") != deckId) continue;
+            auto& cards = d["cards"];
+            cards.erase(std::remove_if(cards.begin(), cards.end(),
+                [&](const json& c){ return c.get<std::string>() == cardId; }), cards.end());
+            found = true;
+            break;
+        }
+        if (!found) { res.status(404).json({{"error","deck not found"}}); return; }
+        decks_write(decks);
+        res.json({{"ok", true}});
     });
 
     app.serve_static("/img/frames",      "./assets/img/frames");

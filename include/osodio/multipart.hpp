@@ -43,6 +43,8 @@ struct MultipartPart {
 //   if (!parts) { ... handle error ... }
 //   for (auto& p : *parts) { ... }
 
+static constexpr size_t kMaxMultipartParts = 256;
+
 inline std::optional<std::vector<MultipartPart>>
 parse_multipart(const Request& req) {
     // ── 1. Extract boundary from Content-Type ─────────────────────────────────
@@ -66,7 +68,7 @@ parse_multipart(const Request& req) {
         if (!quoted && (c == ';' || c == ' ' || c == '\r')) break;
         boundary_val += c;
     }
-    if (boundary_val.empty()) return std::nullopt;
+    if (boundary_val.empty() || boundary_val.size() > 70) return std::nullopt;  // RFC 2046 §5.1.1: max 70 chars
 
     // RFC 2046 §5.1.1: delimiter = "--" + boundary
     const std::string delim     = "--" + boundary_val;
@@ -110,29 +112,53 @@ parse_multipart(const Request& req) {
             auto colon = hline.find(':');
             if (colon == std::string::npos) continue;
             std::string key = hline.substr(0, colon);
-            std::string val = (colon + 2 <= hline.size()) ? hline.substr(colon + 2) : "";
+            // Skip RFC 7230 OWS (optional whitespace) after ':'.  The previous
+            // version hard-coded ": " and lost the first byte when a sender
+            // wrote "Content-Type:image/png" with no space.
+            size_t vstart = colon + 1;
+            while (vstart < hline.size() && (hline[vstart] == ' ' || hline[vstart] == '\t'))
+                ++vstart;
+            std::string val = hline.substr(vstart);
             std::transform(key.begin(), key.end(), key.begin(), ::tolower);
 
             if (key == "content-disposition") {
-                // Extract name="..." and optional filename="..."
+                // Extract name="..." and optional filename="..." — the attribute
+                // must appear as a standalone parameter (preceded by ';' or at the
+                // start of the value).  Without the boundary check, find("name=")
+                // would match the "name=" substring inside "filename=", returning
+                // the filename for part.name.
                 auto extract = [&](const std::string& attr) -> std::string {
-                    std::string needle = attr + "=\"";
-                    auto p = val.find(needle);
-                    if (p == std::string::npos) {
-                        // Also try unquoted: attr=value
-                        needle = attr + "=";
-                        p = val.find(needle);
+                    size_t pos = 0;
+                    while (pos < val.size()) {
+                        auto p = val.find(attr, pos);
                         if (p == std::string::npos) return "";
-                        p += needle.size();
-                        auto q = val.find_first_of("; \r\n", p);
-                        return val.substr(p, q == std::string::npos ? std::string::npos : q - p);
+                        bool at_boundary = (p == 0);
+                        if (!at_boundary) {
+                            size_t b = p;
+                            while (b > 0 && (val[b-1] == ' ' || val[b-1] == '\t')) --b;
+                            if (b > 0 && val[b-1] == ';') at_boundary = true;
+                        }
+                        size_t after = p + attr.size();
+                        if (at_boundary && after < val.size() && val[after] == '=') {
+                            size_t v = after + 1;
+                            if (v < val.size() && val[v] == '"') {
+                                ++v;
+                                auto q = val.find('"', v);
+                                return q == std::string::npos ? "" : val.substr(v, q - v);
+                            }
+                            auto q = val.find_first_of("; \r\n\t", v);
+                            return val.substr(v, q == std::string::npos ? std::string::npos : q - v);
+                        }
+                        pos = p + 1;
                     }
-                    p += needle.size();
-                    auto q = val.find('"', p);
-                    return q == std::string::npos ? "" : val.substr(p, q - p);
+                    return "";
                 };
                 part.name     = extract("name");
                 part.filename = extract("filename");
+                // Strip path separators from filename to prevent directory
+                // traversal if callers use part.filename directly as a save path.
+                for (auto& c : part.filename)
+                    if (c == '/' || c == '\\') c = '_';
             } else if (key == "content-type") {
                 part.content_type = val;
             }
@@ -140,6 +166,7 @@ parse_multipart(const Request& req) {
         }
 
         parts.push_back(std::move(part));
+        if (parts.size() >= kMaxMultipartParts) break;
 
         // Advance past the delimiter
         pos = end + next_delim.size();

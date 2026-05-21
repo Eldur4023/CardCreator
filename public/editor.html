@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Card Creator</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div id="app">
+    <div id="topbar">
+        <h1>Card Creator</h1>
+        <div id="tabs">
+            <div class="tab active" data-tab="frame">Frame</div>
+            <div class="tab" data-tab="text">Text</div>
+            <div class="tab" data-tab="art">Art</div>
+            <div class="tab tab-cards" data-tab="library">Cards</div>
+        </div>
+    </div>
+
+    <!-- ── Sidebar ── -->
+    <div id="sidebar">
+
+        <!-- ── Frame panel ── -->
+        <div id="panel-frame" class="panel active">
+
+            <div class="card-section">
+                <div id="frame-categories"></div>
+                <div id="frame-subcategories"></div>
+                <div id="frame-picker"></div>
+                <div id="selectedPreview" class="dimtext">(Selected: none)</div>
+                <div class="row">
+                    <button onclick="addFrame()">Add Frame</button>
+                    <button class="secondary" onclick="addFrameWithMask('right','Right Half')">Right Half</button>
+                    <button class="secondary" onclick="addFrameWithMask('left','Left Half')">Left Half</button>
+                    <button class="secondary" onclick="addFrameWithMask('middle','Mid Third')">Mid Third</button>
+                </div>
+            </div>
+
+            <div class="card-section">
+                <div class="section-title">Applied Frames</div>
+                <div id="frame-list"></div>
+            </div>
+
+            <div class="card-section">
+                <div class="section-title">Custom Upload</div>
+                <label class="drop-area">
+                    <span class="dimtext">Drag &amp; drop or click to upload frame</span>
+                    <input type="file" accept=".png,.svg,.jpg,.jpeg,.bmp" class="file-input-hidden"
+                        onchange="uploadFiles(this.files, uploadFrameOption)">
+                </label>
+                <input type="url" placeholder="Via URL" oninput="imageURL(this.value, uploadFrameOption)">
+            </div>
+
+            <div class="card-section">
+                <button id="btn-download" onclick="downloadCard()">⬇ Download Card (PNG)</button>
+            </div>
+
+            <div id="special-editor"></div>
+        </div>
+
+        <!-- ── Text panel ── -->
+        <div id="panel-text" class="panel">
+            <div class="card-section">
+                <div class="section-title">Select text area</div>
+                <div id="text-options"></div>
+            </div>
+            <div class="card-section">
+                <div class="section-title">Position</div>
+                <div class="row">
+                    <div><div class="dimtext">X</div><input id="text-x" type="number" step="1" oninput="textPositionEdited()"></div>
+                    <div><div class="dimtext">Y</div><input id="text-y" type="number" step="1" oninput="textPositionEdited()"></div>
+                </div>
+            </div>
+            <div class="card-section">
+                <div class="section-title">Edit text</div>
+                <textarea id="text-editor" oninput="textEdited()" placeholder="Enter card text here...
+Use {w}{u}{b}{r}{g} for mana symbols
+Use {i}...{/i} for italic"></textarea>
+                <div class="row">
+                    <button class="secondary" onclick="wrapTextTag('i')">Italic</button>
+                    <button class="secondary" onclick="wrapTextTag('bold')">Bold</button>
+                    <button class="secondary" onclick="insertText('{divider}')">Flavor bar</button>
+                    <button class="secondary" onclick="insertText('{flavor}')">Flavor</button>
+                </div>
+            </div>
+            <div class="card-section">
+                <div class="section-title">Font size override (0 = auto)</div>
+                <input id="text-editor-font-size" type="number" value="0" step="1" oninput="fontSizeEdited()">
+            </div>
+            <div class="card-section">
+                <label><input id="hide-reminder-text" type="checkbox" onchange="textEdited()"> Hide reminder text</label>
+            </div>
+            <div class="card-section">
+                <div class="collapsible" onclick="toggleCollapse(this)">Mana &amp; Text Code Reference</div>
+                <div class="collapse-body" style="font-size:11px;color:var(--text-dim)">
+                    <b>Text:</b> {i} {/i} {bold} {/bold} {divider} {flavor} {cardname} ~ {-}<br>
+                    <b>Mana:</b> {w} {u} {b} {r} {g} {c} {s} {e} {t} {x}<br>
+                    {1}–{20} · {wu} {ub} {br} {rg} {gw} … · {wp} {up} …<br>
+                    <b>PW:</b> {+1} {0} {-1} {planeswalker}
+                </div>
+            </div>
+        </div>
+
+        <!-- ── Art panel ── -->
+        <div id="panel-art" class="panel">
+            <div class="card-section">
+                <div class="section-title">Upload art</div>
+                <label class="drop-area">
+                    <span class="dimtext">Drag &amp; drop or click to upload art</span>
+                    <input type="file" accept=".png,.svg,.jpg,.jpeg,.bmp,.webp" class="file-input-hidden"
+                        onchange="uploadFiles(this.files, uploadArt, document.querySelector('#art-autofit').checked ? 'autoFit' : '')">
+                </label>
+                <input type="url" id="art-url" placeholder="Image URL" oninput="imageURL(this.value, uploadArt)">
+                <input id="art-name" type="text" placeholder="Or search Scryfall card name" oninput="debouncedScryfall(this.value)">
+                <select id="art-index" onchange="changeArtIndex()" style="display:none"></select>
+            </div>
+            <div class="card-section">
+                <div class="section-title">Position / Scale / Rotate</div>
+                <div class="row">
+                    <div><div class="dimtext">X</div><input id="art-x" type="number" value="0" oninput="artEdited()"></div>
+                    <div><div class="dimtext">Y</div><input id="art-y" type="number" value="0" oninput="artEdited()"></div>
+                </div>
+                <div class="row">
+                    <div><div class="dimtext">Scale %</div><input id="art-zoom" type="number" value="100" step="0.1" min="0" oninput="artEdited()"></div>
+                    <div><div class="dimtext">Rotate °</div><input id="art-rotate" type="number" value="0" step="1" oninput="artEdited()"></div>
+                </div>
+                <div class="row">
+                    <label><input id="art-autofit" type="checkbox"> Autofit on load</label>
+                    <button class="secondary" onclick="autoFitArt()">Auto Fit</button>
+                    <button class="secondary" onclick="uploadArt('/img/blank.png')">Clear Art</button>
+                </div>
+                <div class="dimtext">Drag card to reposition · Shift+drag to scale · Ctrl+drag to rotate</div>
+                <label><input id="grayscale-art" type="checkbox" onchange="drawCard()"> Grayscale art</label>
+            </div>
+        </div>
+
+        <!-- ── Library panel ── -->
+        <div id="panel-library" class="panel">
+            <div class="card-section">
+                <div class="section-title">Guardar carta</div>
+                <div class="row" style="gap:6px">
+                    <input id="library-card-name" type="text" placeholder="Nombre de la carta" style="flex:1">
+                    <button onclick="saveCard()">Guardar</button>
+                </div>
+            </div>
+            <div class="card-section">
+                <div class="section-title">Cartas guardadas</div>
+                <div id="library-grid"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Main canvas ── -->
+    <div id="main">
+        <div id="preview-wrap">
+            <canvas id="previewCanvas" width="1005" height="1407"></canvas>
+        </div>
+    </div>
+</div>
+
+<!-- Hidden canvases for compositing -->
+<canvas id="cardCanvas"              width="2010" height="2814" style="display:none"></canvas>
+<canvas id="frameCanvas"             width="2010" height="2814" style="display:none"></canvas>
+<canvas id="frameMaskingCanvas"      width="2010" height="2814" style="display:none"></canvas>
+<canvas id="frameCompositingCanvas"  width="2010" height="2814" style="display:none"></canvas>
+<canvas id="textCanvas"              width="2010" height="2814" style="display:none"></canvas>
+<canvas id="lineCanvas"              width="2010" height="200"  style="display:none"></canvas>
+<canvas id="paragraphCanvas"         width="2010" height="2814" style="display:none"></canvas>
+<canvas id="watermarkCanvas"         width="2010" height="2814" style="display:none"></canvas>
+
+<script src="/js/editor.js"></script>
+<script src="/js/library.js"></script>
+</body>
+</html>

@@ -6,10 +6,14 @@
 #include <filesystem>
 #include <memory>
 #include <functional>
+#include <algorithm>
 #include <unistd.h>
 #include <cerrno>
+#include <iostream>
+#include <vector>
 #include <nlohmann/json.hpp>
 #include <inja.hpp>
+#include "cookies.hpp"
 
 namespace osodio {
 
@@ -19,6 +23,10 @@ class Response {
         std::string body;
         std::string templates_dir = "./templates";
         std::unordered_map<std::string, std::string> headers;
+        // Set-Cookie is the one HTTP response header that legally appears
+        // multiple times — keep them in a separate list so they survive the
+        // map serialisation.
+        std::vector<std::string> cookies;
         // sendfile path: when set, build() emits only headers; the connection
         // uses sendfile(2) to stream the file body directly to the socket.
         std::string     sendfile_path;
@@ -45,11 +53,41 @@ public:
     }
 
     Response& header(std::string key, std::string value) {
+        // Strip CR/LF from both key and value to prevent HTTP response splitting.
+        auto strip_crlf = [](std::string& s) {
+            s.erase(std::remove_if(s.begin(), s.end(),
+                [](char c){ return c == '\r' || c == '\n'; }), s.end());
+        };
+        strip_crlf(key);
+        strip_crlf(value);
         state_->headers[std::move(key)] = std::move(value);
         return *this;
     }
 
+    // Set a cookie.  Multiple cookies can be set on one response — each emits
+    // its own Set-Cookie header (the map storage in headers_ only allows one).
+    //
+    //   res.cookie("session", token, {.secure = true, .same_site = SameSite::Strict});
+    //
+    Response& cookie(std::string name, std::string value, CookieOptions opts = {}) {
+        state_->cookies.push_back(
+            build_set_cookie(std::move(name), std::move(value), std::move(opts)));
+        return *this;
+    }
+
+    // Convenience: delete a cookie by name (sets Max-Age=0).
+    Response& clear_cookie(std::string name, CookieOptions opts = {}) {
+        opts.max_age = 0;
+        state_->cookies.push_back(
+            build_set_cookie(std::move(name), "", std::move(opts)));
+        return *this;
+    }
+
     Response& text(std::string body) {
+        if (state_->body_committed) {
+            std::cerr << "[osodio] Response.text() called after body already committed — ignoring\n";
+            return *this;
+        }
         header("Content-Type", "text/plain; charset=utf-8");
         state_->body = std::move(body);
         state_->body_committed = true;
@@ -57,15 +95,38 @@ public:
     }
 
     Response& html(const std::string& content) {
+        if (state_->body_committed) {
+            std::cerr << "[osodio] Response.html() called after body already committed — ignoring\n";
+            return *this;
+        }
         header("Content-Type", "text/html; charset=utf-8");
         state_->body_committed = true;
         if (is_template_name(content)) {
             namespace fs = std::filesystem;
-            fs::path path = fs::path(state_->templates_dir) / content;
+            // Reject traversal/absolute paths: html("../../etc/passwd.html") would
+            // otherwise read arbitrary files reachable from the templates dir.
+            fs::path requested(content);
+            if (requested.is_absolute()) {
+                state_->status_code = 403;
+                state_->body = R"({"error":"Forbidden"})";
+                state_->headers["Content-Type"] = "application/json; charset=utf-8";
+                return *this;
+            }
+            for (const auto& comp : requested) {
+                if (comp == "..") {
+                    state_->status_code = 403;
+                    state_->body = R"({"error":"Forbidden"})";
+                    state_->headers["Content-Type"] = "application/json; charset=utf-8";
+                    return *this;
+                }
+            }
+            fs::path path = fs::path(state_->templates_dir) / requested;
             std::ifstream f(path, std::ios::binary);
             if (!f) {
+                std::cerr << "[osodio] template not found: " << path.string() << '\n';
                 state_->status_code = 500;
-                state_->body = "Template not found: " + path.string();
+                state_->body = R"({"error":"Internal Server Error"})";
+                state_->headers["Content-Type"] = "application/json; charset=utf-8";
                 return *this;
             }
             state_->body = std::string(std::istreambuf_iterator<char>(f),
@@ -77,6 +138,10 @@ public:
     }
 
     Response& json(const nlohmann::json& j) {
+        if (state_->body_committed) {
+            std::cerr << "[osodio] Response.json() called after body already committed — ignoring\n";
+            return *this;
+        }
         header("Content-Type", "application/json; charset=utf-8");
         state_->body = j.dump();
         state_->body_committed = true;
@@ -84,6 +149,10 @@ public:
     }
 
     Response& send(std::string body) {
+        if (state_->body_committed) {
+            std::cerr << "[osodio] Response.send() called after body already committed — ignoring\n";
+            return *this;
+        }
         state_->body = std::move(body);
         state_->body_committed = true;
         return *this;
@@ -96,6 +165,30 @@ public:
     //
     Response& render(const std::string& template_name,
                      const nlohmann::json& data = {}) {
+        if (state_->body_committed) {
+            std::cerr << "[osodio] Response.render() called after body already committed — ignoring\n";
+            return *this;
+        }
+        // Reject traversal/absolute paths before handing to inja.
+        {
+            std::filesystem::path requested(template_name);
+            if (requested.is_absolute()) {
+                state_->status_code = 403;
+                state_->body = R"({"error":"Forbidden"})";
+                state_->headers["Content-Type"] = "application/json; charset=utf-8";
+                state_->body_committed = true;
+                return *this;
+            }
+            for (const auto& comp : requested) {
+                if (comp == "..") {
+                    state_->status_code = 403;
+                    state_->body = R"({"error":"Forbidden"})";
+                    state_->headers["Content-Type"] = "application/json; charset=utf-8";
+                    state_->body_committed = true;
+                    return *this;
+                }
+            }
+        }
         header("Content-Type", "text/html; charset=utf-8");
         try {
             // One inja::Environment per (thread × templates_dir): templates are
@@ -111,8 +204,10 @@ public:
             state_->body_committed = true;
             state_->body = it->second.render_file(template_name, data);
         } catch (const std::exception& e) {
+            std::cerr << "[osodio] template render error: " << e.what() << '\n';
             state_->status_code = 500;
-            state_->body = std::string("Template error: ") + e.what();
+            state_->body = R"({"error":"Internal Server Error"})";
+            state_->headers["Content-Type"] = "application/json; charset=utf-8";
         }
         return *this;
     }
@@ -120,7 +215,21 @@ public:
     // Zero-copy static file: instead of reading the file into the body,
     // record the path and let the connection layer use sendfile(2).
     // Content-Type should be set by the caller before calling send_file().
+    //
+    // WARNING: if `path` is derived from user input, use serve_file_from()
+    // instead — it enforces a root directory and resolves symlinks safely.
     Response& send_file(const std::filesystem::path& path) {
+        // Reject paths with ".." components to prevent directory traversal.
+        // Internal callers (serve_file_from, try_serve_static) pass canonical
+        // paths so this check is a no-op for them.
+        for (const auto& comp : path) {
+            if (comp == "..") {
+                state_->status_code = 403;
+                state_->body = R"({"error":"Forbidden"})";
+                state_->headers["Content-Type"] = "application/json; charset=utf-8";
+                return *this;
+            }
+        }
         std::error_code ec;
         auto sz = std::filesystem::file_size(path, ec);
         if (ec) { state_->status_code = 500; state_->body = "Cannot stat file"; return *this; }
@@ -138,17 +247,34 @@ public:
         return *this;
     }
 
-    // Safe file serving with path-traversal protection.
-    // Resolves root/user_path canonically and rejects anything that escapes root.
-    // Use this instead of send_file() when user_path comes from request input.
+    // Safe file serving with path-traversal and symlink protection.
+    // Fully resolves root/user_path (following all symlinks) and rejects
+    // anything that resolves outside root.  Use this instead of send_file()
+    // when user_path comes from request input.
     //
     //   res.serve_file_from("./uploads", req.param("name").value_or(""));
     //
     Response& serve_file_from(const std::filesystem::path& root,
                                const std::filesystem::path& user_path) {
         namespace fs = std::filesystem;
-        auto canonical_root = fs::weakly_canonical(root);
-        auto canonical_file = fs::weakly_canonical(canonical_root / user_path);
+        std::error_code ec;
+        // canonical() resolves ALL symlinks (unlike weakly_canonical), which
+        // prevents symlink-swap attacks where a symlink inside root points to
+        // a file outside root.
+        auto canonical_root = fs::canonical(root, ec);
+        if (ec) {
+            state_->status_code = 500;
+            state_->body = R"({"error":"Internal Server Error"})";
+            state_->headers["Content-Type"] = "application/json; charset=utf-8";
+            return *this;
+        }
+        auto canonical_file = fs::canonical(canonical_root / user_path, ec);
+        if (ec) {
+            state_->status_code = 404;
+            state_->body = R"({"error":"Not Found"})";
+            state_->headers["Content-Type"] = "application/json; charset=utf-8";
+            return *this;
+        }
         auto [ri, fi] = std::mismatch(canonical_root.begin(), canonical_root.end(),
                                        canonical_file.begin());
         if (ri != canonical_root.end()) {
@@ -171,6 +297,8 @@ public:
     const std::string&     body()           const { return state_->body; }
     const std::unordered_map<std::string, std::string>&
                            headers_map()    const { return state_->headers; }
+    const std::vector<std::string>&
+                           cookies()        const { return state_->cookies; }
     const std::string&     sendfile_path()  const { return state_->sendfile_path; }
     std::uintmax_t         sendfile_size()  const { return state_->sendfile_size; }
     bool                   is_committed()   const { return state_->body_committed; }
@@ -190,6 +318,8 @@ public:
            << ' ' << reason_phrase(state_->status_code) << "\r\n";
         for (const auto& [k, v] : state_->headers)
             os << k << ": " << v << "\r\n";
+        for (const auto& c : state_->cookies)
+            os << "Set-Cookie: " << c << "\r\n";
         os << "\r\n";
         return os.str();
     }
@@ -205,6 +335,8 @@ public:
         os << "Content-Length: " << clen << "\r\n";
         for (const auto& [k, v] : state_->headers)
             os << k << ": " << v << "\r\n";
+        for (const auto& c : state_->cookies)
+            os << "Set-Cookie: " << c << "\r\n";
         os << "\r\n";
         // Body only for normal (non-sendfile) responses
         if (state_->sendfile_path.empty())
@@ -223,21 +355,31 @@ private:
         switch (code) {
             case 200: return "OK";
             case 201: return "Created";
+            case 202: return "Accepted";
             case 204: return "No Content";
+            case 206: return "Partial Content";
             case 301: return "Moved Permanently";
             case 302: return "Found";
             case 304: return "Not Modified";
+            case 307: return "Temporary Redirect";
+            case 308: return "Permanent Redirect";
             case 400: return "Bad Request";
             case 401: return "Unauthorized";
             case 403: return "Forbidden";
             case 404: return "Not Found";
             case 405: return "Method Not Allowed";
+            case 408: return "Request Timeout";
             case 409: return "Conflict";
+            case 410: return "Gone";
+            case 413: return "Content Too Large";
+            case 415: return "Unsupported Media Type";
             case 422: return "Unprocessable Entity";
             case 429: return "Too Many Requests";
             case 500: return "Internal Server Error";
+            case 501: return "Not Implemented";
             case 502: return "Bad Gateway";
             case 503: return "Service Unavailable";
+            case 504: return "Gateway Timeout";
             default:  return "Unknown";
         }
     }

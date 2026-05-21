@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Card Library — Card Creator</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <style>
+        #app {
+            display: grid;
+            grid-template-columns: 260px 1fr;
+            grid-template-rows: 56px 1fr;
+            height: 100vh;
+        }
+
+        /* ── Topbar ── */
+        #topbar {
+            grid-column: 1 / -1;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 0 20px;
+        }
+        #topbar h1 { font-size:16px; font-family:belerenb,sans-serif; letter-spacing:1px; color:var(--selected); }
+        #topbar a.back {
+            font-size:12px; color:var(--text-dim); text-decoration:none;
+            border:1px solid var(--panel-border); border-radius:var(--radius); padding:5px 12px;
+            transition:color .15s,border-color .15s;
+        }
+        #topbar a.back:hover { color:var(--text); border-color:var(--accent-hover); }
+        #card-count { font-size:12px; color:var(--text-dim); margin-left:auto; }
+
+        /* ── Deck sidebar ── */
+        #deck-sidebar {
+            background: var(--panel);
+            border-right: 1px solid var(--panel-border);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        #deck-sidebar-inner {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .sidebar-title {
+            font-size:11px; text-transform:uppercase; letter-spacing:1px;
+            color:var(--text-dim); padding:4px 0 8px;
+        }
+
+        .deck-create-row { display:flex; gap:6px; }
+        .deck-create-row input { flex:1; }
+        .deck-create-row button { flex:none; padding:7px 12px; }
+
+        .deck-list { display:flex; flex-direction:column; gap:4px; }
+
+        .deck-item {
+            display:flex; align-items:center; gap:6px;
+            padding:8px 10px;
+            background:#1a1a1a; border:1px solid var(--panel-border);
+            border-radius:var(--radius); cursor:pointer;
+            transition:border-color .15s, background .15s;
+            user-select:none;
+        }
+        .deck-item:hover { background:#222; border-color:var(--accent-hover); }
+        .deck-item.active { background:#1f2e1f; border-color:var(--accent); }
+
+        .deck-item-name { flex:1; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .deck-item-count { font-size:10px; color:var(--text-dim); flex-shrink:0; }
+        .deck-item-del {
+            flex-shrink:0; background:transparent; border:none; color:#555;
+            cursor:pointer; padding:2px 4px; font-size:13px; line-height:1;
+            border-radius:3px; transition:color .15s, background .15s;
+        }
+        .deck-item-del:hover { color:#c55; background:#2a1a1a; }
+
+        .deck-all {
+            display:flex; align-items:center; gap:6px;
+            padding:8px 10px;
+            background:transparent; border:1px solid transparent;
+            border-radius:var(--radius); cursor:pointer;
+            font-size:13px; color:var(--text-dim);
+            transition:color .15s;
+            user-select:none;
+        }
+        .deck-all:hover { color:var(--text); }
+        .deck-all.active { color:var(--selected); }
+
+        /* ── Card grid ── */
+        #content {
+            overflow-y:auto; padding:20px; background:#0e0e0e;
+        }
+
+        #cards-grid {
+            display:grid;
+            grid-template-columns:repeat(auto-fill, minmax(200px, 1fr));
+            gap:14px;
+        }
+
+        .card-entry {
+            background:var(--panel); border:1px solid var(--panel-border);
+            border-radius:var(--radius); overflow:hidden;
+            display:flex; flex-direction:column;
+        }
+
+        .card-thumb-wrap {
+            position:relative; background:#111;
+            display:flex; align-items:center; justify-content:center;
+            padding:10px;
+        }
+        .card-thumb {
+            width:100%; max-width:120px;
+            aspect-ratio:1005/1407; object-fit:cover;
+            border-radius:6px;
+            box-shadow:0 4px 16px rgba(0,0,0,.6);
+            display:block; margin:0 auto;
+        }
+
+        .card-body { padding:10px; display:flex; flex-direction:column; gap:8px; }
+
+        .card-name {
+            font-family:belerenb,sans-serif; font-size:13px;
+            color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+        }
+        .card-date { font-size:10px; color:var(--text-dim); }
+
+        .card-actions { display:flex; gap:5px; flex-wrap:wrap; }
+        .card-actions button { flex:1; font-size:11px; padding:5px 8px; }
+
+        .deck-assign-wrap { position:relative; flex:2; }
+        .deck-assign-select {
+            width:100%; background:var(--input-bg); border:1px solid var(--input-border);
+            border-radius:4px; color:var(--text); padding:5px 8px;
+            font-family:inherit; font-size:11px; cursor:pointer; outline:none;
+        }
+        .deck-assign-select:focus { border-color:var(--accent-hover); }
+
+        /* ── Empty / status ── */
+        #status {
+            color:var(--text-dim); font-size:13px;
+            padding:48px; text-align:center;
+        }
+    </style>
+</head>
+<body>
+<div id="app">
+    <div id="topbar">
+        <a class="back" href="/">← Back</a>
+        <h1>Card Library</h1>
+        <span id="card-count"></span>
+    </div>
+
+    <!-- Deck sidebar -->
+    <div id="deck-sidebar">
+        <div id="deck-sidebar-inner">
+            <div class="sidebar-title">Decks</div>
+
+            <div class="deck-create-row">
+                <input id="deck-name-input" type="text" placeholder="New deck name…" maxlength="48">
+                <button onclick="createDeck()">+</button>
+            </div>
+
+            <div class="deck-list" id="deck-list"></div>
+        </div>
+    </div>
+
+    <!-- Card content -->
+    <div id="content">
+        <div id="status">Loading…</div>
+        <div id="cards-grid" style="display:none"></div>
+    </div>
+</div>
+
+<script>
+'use strict';
+
+let allCards  = [];
+let allDecks  = [];
+let activeDeckId = null; // null = show all
+
+// ── API ──────────────────────────────────────────────────────────────────────
+
+async function apiGet(url)              { const r = await fetch(url);              return r.json(); }
+async function apiPost(url, body)       { const r = await fetch(url, { method:'POST',   headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) }); return r.json(); }
+async function apiPut(url)              { const r = await fetch(url, { method:'PUT'   }); return r.json(); }
+async function apiDel(url)              { const r = await fetch(url, { method:'DELETE' }); return r.json(); }
+
+// ── Load ─────────────────────────────────────────────────────────────────────
+
+async function load() {
+    [allCards, allDecks] = await Promise.all([
+        apiGet('/api/library').catch(() => []),
+        apiGet('/api/decks').catch(() => []),
+    ]);
+    renderDecks();
+    renderCards();
+}
+
+// ── Decks ────────────────────────────────────────────────────────────────────
+
+function renderDecks() {
+    const list = document.getElementById('deck-list');
+    list.innerHTML = '';
+
+    // "All cards" entry
+    const all = document.createElement('div');
+    all.className = 'deck-all' + (activeDeckId === null ? ' active' : '');
+    all.textContent = 'All cards';
+    all.onclick = () => { activeDeckId = null; renderDecks(); renderCards(); };
+    list.appendChild(all);
+
+    allDecks.forEach(deck => {
+        const item = document.createElement('div');
+        item.className = 'deck-item' + (activeDeckId === deck.id ? ' active' : '');
+        item.onclick = (e) => { if (e.target.classList.contains('deck-item-del')) return; activeDeckId = deck.id; renderDecks(); renderCards(); };
+
+        const name = document.createElement('div');
+        name.className = 'deck-item-name';
+        name.textContent = deck.name;
+
+        const count = document.createElement('div');
+        count.className = 'deck-item-count';
+        count.textContent = (deck.cards || []).length;
+
+        const del = document.createElement('button');
+        del.className = 'deck-item-del';
+        del.title = 'Delete deck';
+        del.textContent = '✕';
+        del.onclick = () => deleteDeck(deck.id);
+
+        item.append(name, count, del);
+        list.appendChild(item);
+    });
+}
+
+async function createDeck() {
+    const input = document.getElementById('deck-name-input');
+    const name  = input.value.trim();
+    if (!name) return;
+    const deck = await apiPost('/api/decks', { name });
+    if (deck.error) return;
+    allDecks.push(deck);
+    input.value = '';
+    renderDecks();
+    renderCards();
+}
+
+document.getElementById('deck-name-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') createDeck();
+});
+
+async function deleteDeck(id) {
+    if (!confirm('Delete this deck? Cards are not affected.')) return;
+    await apiDel('/api/decks/' + encodeURIComponent(id));
+    allDecks = allDecks.filter(d => d.id !== id);
+    if (activeDeckId === id) activeDeckId = null;
+    renderDecks();
+    renderCards();
+}
+
+// ── Cards ────────────────────────────────────────────────────────────────────
+
+function visibleCards() {
+    if (activeDeckId === null) return allCards;
+    const deck = allDecks.find(d => d.id === activeDeckId);
+    if (!deck) return [];
+    const set = new Set(deck.cards || []);
+    return allCards.filter(c => set.has(c.id));
+}
+
+function renderCards() {
+    const status = document.getElementById('status');
+    const grid   = document.getElementById('cards-grid');
+    const count  = document.getElementById('card-count');
+
+    const cards = visibleCards();
+
+    const label = activeDeckId
+        ? (allDecks.find(d => d.id === activeDeckId)?.name ?? 'Deck')
+        : 'All cards';
+    count.textContent = label + ' — ' + cards.length + ' card' + (cards.length !== 1 ? 's' : '');
+
+    if (!cards.length) {
+        grid.style.display = 'none';
+        status.style.display = '';
+        status.textContent = activeDeckId ? 'No cards in this deck.' : 'No cards saved yet.';
+        return;
+    }
+
+    status.style.display = 'none';
+    grid.style.display   = 'grid';
+    grid.innerHTML = '';
+
+    cards.forEach(card => buildCardEl(card, grid));
+}
+
+function buildCardEl(card, grid) {
+    const el = document.createElement('div');
+    el.className = 'card-entry';
+    el.dataset.id = card.id;
+
+    const thumbWrap = document.createElement('div');
+    thumbWrap.className = 'card-thumb-wrap';
+    if (card.thumbnail) {
+        const img = document.createElement('img');
+        img.src = card.thumbnail;
+        img.className = 'card-thumb';
+        thumbWrap.appendChild(img);
+    }
+
+    const body = document.createElement('div');
+    body.className = 'card-body';
+
+    const name = document.createElement('div');
+    name.className = 'card-name';
+    name.title = card.name || 'Untitled';
+    name.textContent = card.name || 'Untitled';
+
+    const date = document.createElement('div');
+    date.className = 'card-date';
+    date.textContent = new Date(card.savedAt).toLocaleDateString();
+
+    const actions = document.createElement('div');
+    actions.className = 'card-actions';
+
+    if (activeDeckId) {
+        // Remove from current deck
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'secondary';
+        removeBtn.textContent = 'Remove from deck';
+        removeBtn.style.flex = '1';
+        removeBtn.onclick = () => removeFromDeck(card.id, activeDeckId);
+        actions.appendChild(removeBtn);
+    } else {
+        // Deck selector + add button
+        const sel = document.createElement('select');
+        sel.className = 'deck-assign-select';
+        sel.innerHTML = '<option value="">Add to deck…</option>';
+        allDecks.forEach(d => {
+            const inDeck = (d.cards || []).includes(card.id);
+            const opt = document.createElement('option');
+            opt.value = d.id;
+            opt.textContent = d.name + (inDeck ? ' ✓' : '');
+            opt.disabled = inDeck;
+            sel.appendChild(opt);
+        });
+        sel.onchange = async () => {
+            const deckId = sel.value;
+            if (!deckId) return;
+            await addToDeck(card.id, deckId);
+            sel.value = '';
+        };
+        const wrap = document.createElement('div');
+        wrap.className = 'deck-assign-wrap';
+        wrap.appendChild(sel);
+        actions.appendChild(wrap);
+    }
+
+    body.append(name, date, actions);
+    el.append(thumbWrap, body);
+    grid.appendChild(el);
+}
+
+async function addToDeck(cardId, deckId) {
+    await apiPut('/api/decks/' + encodeURIComponent(deckId) + '/cards/' + encodeURIComponent(cardId));
+    const deck = allDecks.find(d => d.id === deckId);
+    if (deck && !(deck.cards || []).includes(cardId)) {
+        deck.cards = [...(deck.cards || []), cardId];
+    }
+    renderDecks();
+    renderCards();
+}
+
+async function removeFromDeck(cardId, deckId) {
+    await apiDel('/api/decks/' + encodeURIComponent(deckId) + '/cards/' + encodeURIComponent(cardId));
+    const deck = allDecks.find(d => d.id === deckId);
+    if (deck) deck.cards = (deck.cards || []).filter(id => id !== cardId);
+    renderDecks();
+    renderCards();
+}
+
+load();
+</script>
+</body>
+</html>

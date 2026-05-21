@@ -1,20 +1,29 @@
 'use strict';
 
-const LIBRARY_KEY = 'cardconjurer_library';
-
 document.addEventListener('DOMContentLoaded', () => renderLibrary());
 
-function _libraryLoad() {
-    try { return JSON.parse(localStorage.getItem(LIBRARY_KEY) || '[]'); }
-    catch { return []; }
+async function _libraryLoad() {
+    try {
+        const res = await fetch('/api/library');
+        if (!res.ok) return [];
+        return await res.json();
+    } catch { return []; }
 }
 
-function _librarySave(cards) {
-    localStorage.setItem(LIBRARY_KEY, JSON.stringify(cards));
+async function _librarySave(entry) {
+    const res = await fetch('/api/library', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(entry),
+    });
+    if (!res.ok) throw new Error('Save failed');
+}
+
+async function _libraryDelete(id) {
+    await fetch('/api/library/' + encodeURIComponent(id), { method: 'DELETE' });
 }
 
 function _cardSerialize(name) {
-    // card object — strip Image instances, keep plain data
     const cardData = {
         width: card.width, height: card.height,
         marginX: card.marginX, marginY: card.marginY,
@@ -27,7 +36,6 @@ function _cardSerialize(name) {
         saga: card.saga,
     };
 
-    // frames — keep only serializable fields
     const framesData = (card.frames || []).map(f => ({
         name: f.name, src: f.src,
         masks: (f.masks || []).map(m => ({ name: m.name, src: m.src })),
@@ -39,7 +47,6 @@ function _cardSerialize(name) {
         colorOverlayEnabled: f.colorOverlayEnabled,
     }));
 
-    // thumbnail — small JPEG of the current rendered card
     const thumb = cardCanvas.toDataURL('image/jpeg', 0.25);
 
     return {
@@ -55,41 +62,29 @@ function _cardSerialize(name) {
     };
 }
 
-function saveCard() {
+async function saveCard() {
     const nameEl = document.getElementById('library-card-name');
     const name   = nameEl?.value?.trim() || 'Untitled';
     const entry  = _cardSerialize(name);
-    const cards  = _libraryLoad();
-    cards.unshift(entry);
     try {
-        _librarySave(cards);
+        await _librarySave(entry);
+        renderLibrary();
     } catch (e) {
-        // localStorage full — remove oldest entries until it fits
-        while (cards.length > 1) {
-            cards.pop();
-            try { _librarySave(cards); break; }
-            catch { continue; }
-        }
-        alert('Biblioteca casi llena — se eliminaron cartas antiguas para hacer espacio.');
+        alert('Error al guardar: ' + e.message);
     }
-    renderLibrary();
 }
 
 async function loadCard(id) {
-    const cards = _libraryLoad();
+    const cards = await _libraryLoad();
     const entry = cards.find(c => c.id === id);
     if (!entry) return;
 
     await resetCardIrregularities();
-
-    // restore plain card fields
     Object.assign(card, entry.card);
 
-    // resize canvases to restored dimensions
     ['card','frame','frameMasking','frameCompositing','text','paragraph','line','watermark']
         .forEach(n => sizeCanvas(n));
 
-    // restore art / setSymbol / watermark images
     const loadImg = (img, src) => new Promise(res => {
         if (!src || src.includes('/img/blank')) { res(); return; }
         img.onload = img.onerror = res;
@@ -101,7 +96,6 @@ async function loadCard(id) {
         loadImg(window.watermark, entry.watermark),
     ]);
 
-    // restore frames
     card.frames = [];
     await Promise.all(entry.frames.map(f => new Promise(res => {
         const masks = [];
@@ -129,12 +123,9 @@ async function loadCard(id) {
         });
     })));
 
-
     renderFrameList();
 
-    // trigger version script to rebuild special editors
     if (entry.card.onload) {
-        // reset loadedVersions so init runs fresh
         const idx = loadedVersions.indexOf(entry.card.onload);
         if (idx !== -1) loadedVersions.splice(idx, 1);
         loadScript(entry.card.onload);
@@ -143,16 +134,17 @@ async function loadCard(id) {
     drawCard();
 }
 
-function deleteCard(id) {
-    const cards = _libraryLoad().filter(c => c.id !== id);
-    _librarySave(cards);
+async function deleteCard(id) {
+    await _libraryDelete(id);
     renderLibrary();
 }
 
-function renderLibrary() {
+async function renderLibrary() {
     const container = document.getElementById('library-grid');
     if (!container) return;
-    const cards = _libraryLoad();
+
+    container.innerHTML = '<p class="dimtext" style="padding:12px">Cargando...</p>';
+    const cards = await _libraryLoad();
 
     if (!cards.length) {
         container.innerHTML = '<p class="dimtext" style="padding:12px">No hay cartas guardadas.</p>';

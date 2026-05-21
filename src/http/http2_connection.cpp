@@ -1,4 +1,5 @@
 #include "http2_connection.hpp"
+#include "http_parser.hpp"
 #include "../../include/osodio/request.hpp"
 #include "../../include/osodio/task.hpp"
 #include "../../include/osodio/metrics.hpp"
@@ -26,8 +27,10 @@ static std::string url_decode(const std::string& s) {
             char buf[3] = {s[i+1], s[i+2], '\0'};
             char* end;
             unsigned long v = std::strtoul(buf, &end, 16);
-            if (end == buf + 2) { out += static_cast<char>(v); i += 2; }
-            else                { out += '%'; }
+            if (end == buf + 2) {
+                if (v != 0) out += static_cast<char>(v);  // reject %00 null bytes
+                i += 2;
+            } else { out += '%'; }
         } else if (s[i] == '+') {
             out += ' ';
         } else {
@@ -97,12 +100,19 @@ bool Http2Connection::init() {
 
     // Server SETTINGS: max 100 concurrent streams, default window size,
     // and ENABLE_CONNECT_PROTOCOL=1 so clients can use RFC 8441 WebSocket.
+    // SETTINGS_MAX_HEADER_LIST_SIZE caps the total HPACK-decoded header bytes
+    // per request; without it nghttp2 only enforces its internal default.
+    // SETTINGS_MAX_FRAME_SIZE pins the per-frame ceiling to the protocol minimum
+    // so a peer cannot negotiate jumbo frames that would amplify single-frame DoS.
     nghttp2_settings_entry iv[] = {
-        {NGHTTP2_SETTINGS_MAX_CONCURRENT_STREAMS,    100},
-        {NGHTTP2_SETTINGS_INITIAL_WINDOW_SIZE,     65535},
-        {NGHTTP2_SETTINGS_ENABLE_CONNECT_PROTOCOL,     1},
+        {NGHTTP2_SETTINGS_MAX_CONCURRENT_STREAMS,        100},
+        {NGHTTP2_SETTINGS_INITIAL_WINDOW_SIZE,         65535},
+        {NGHTTP2_SETTINGS_ENABLE_CONNECT_PROTOCOL,         1},
+        {NGHTTP2_SETTINGS_MAX_HEADER_LIST_SIZE,    32 * 1024}, // 32 KiB
+        {NGHTTP2_SETTINGS_MAX_FRAME_SIZE,          16 * 1024}, // 16 KiB
     };
-    nghttp2_submit_settings(session_, NGHTTP2_FLAG_NONE, iv, 3);
+    nghttp2_submit_settings(session_, NGHTTP2_FLAG_NONE, iv,
+                            sizeof(iv) / sizeof(iv[0]));
     flush();  // send SETTINGS immediately
     return true;
 }
@@ -254,8 +264,11 @@ void Http2Connection::dispatch_stream(int32_t stream_id, Stream& s) {
                       std::shared_ptr<osodio::Response> res,
                       osodio::DispatchFn                disp) -> osodio::Task<void> {
         try { co_await disp(*req, *res); }
-        catch (const std::exception& e) { res->status(500).json({{"error", e.what()}}); }
-        catch (...)                     { res->status(500).json({{"error", "Internal Server Error"}}); }
+        catch (const std::exception& e) {
+            std::cerr << "[osodio] unhandled exception: " << e.what() << '\n';
+            res->status(500).json({{"error", "Internal Server Error"}});
+        }
+        catch (...) { res->status(500).json({{"error", "Internal Server Error"}}); }
     }(req_ptr, res_ptr, dispatch_);
 
     auto h = wrapper.detach();
@@ -296,7 +309,7 @@ void Http2Connection::finish_stream(int32_t stream_id, const osodio::Response& r
 
     // nghttp2_nv borrows the strings — keep them alive in local storage.
     std::vector<std::pair<std::string,std::string>> hdr_store;
-    hdr_store.reserve(res.headers_map().size() + 1);
+    hdr_store.reserve(res.headers_map().size() + res.cookies().size() + 1);
     hdr_store.emplace_back(":status", status_str);
     for (const auto& [k, v] : res.headers_map()) {
         // HTTP/2 forbids connection-specific headers (RFC 7540 §8.1.2.2)
@@ -306,6 +319,10 @@ void Http2Connection::finish_stream(int32_t stream_id, const osodio::Response& r
             lk == "transfer-encoding" || lk == "upgrade") continue;
         hdr_store.emplace_back(k, v);
     }
+    // RFC 7540 §8.1.2.5 — each Set-Cookie must be emitted as its own header
+    // field (HPACK encodes them as separate name-value pairs).
+    for (const auto& c : res.cookies())
+        hdr_store.emplace_back("set-cookie", c);
 
     std::vector<nghttp2_nv> nva;
     nva.reserve(hdr_store.size());
@@ -325,6 +342,14 @@ void Http2Connection::finish_stream(int32_t stream_id, const osodio::Response& r
     stream.body_src = std::make_unique<BodySrc>();
 
     if (!res.sendfile_path().empty()) {
+        // HTTP/2 over TLS can't use sendfile(2), so the file has to live in
+        // userspace.  Cap the in-memory copy so a multi-GB static asset (or a
+        // misconfigured route) can't blow up the process per concurrent client.
+        if (res.sendfile_size() > kMaxStreamBodyBytes) {
+            nghttp2_submit_rst_stream(session_, NGHTTP2_FLAG_NONE,
+                                      stream_id, NGHTTP2_INTERNAL_ERROR);
+            flush(); return;
+        }
         std::ifstream f(res.sendfile_path(), std::ios::binary);
         if (!f) {
             nghttp2_submit_rst_stream(session_, NGHTTP2_FLAG_NONE,
@@ -332,6 +357,12 @@ void Http2Connection::finish_stream(int32_t stream_id, const osodio::Response& r
             flush(); return;
         }
         stream.body_src->data.assign((std::istreambuf_iterator<char>(f)), {});
+        if (stream.body_src->data.size() > kMaxStreamBodyBytes) {
+            // File grew between stat and read — bail rather than ship.
+            nghttp2_submit_rst_stream(session_, NGHTTP2_FLAG_NONE,
+                                      stream_id, NGHTTP2_INTERNAL_ERROR);
+            flush(); return;
+        }
     } else {
         stream.body_src->data = res.body();
     }
@@ -379,7 +410,7 @@ void Http2Connection::h2_begin_sse(int32_t stream_id, const osodio::Response& re
     // Build header list — filter connection-specific headers forbidden by H2.
     std::string status_str = std::to_string(res.status_code());
     std::vector<std::pair<std::string,std::string>> hdr_store;
-    hdr_store.reserve(res.headers_map().size() + 1);
+    hdr_store.reserve(res.headers_map().size() + res.cookies().size() + 1);
     hdr_store.emplace_back(":status", status_str);
     for (const auto& [k, v] : res.headers_map()) {
         std::string lk = k;
@@ -388,6 +419,8 @@ void Http2Connection::h2_begin_sse(int32_t stream_id, const osodio::Response& re
             lk == "transfer-encoding" || lk == "upgrade") continue;
         hdr_store.emplace_back(k, v);
     }
+    for (const auto& c : res.cookies())
+        hdr_store.emplace_back("set-cookie", c);
 
     std::vector<nghttp2_nv> nva;
     nva.reserve(hdr_store.size());
@@ -430,9 +463,9 @@ void Http2Connection::h2_begin_sse(int32_t stream_id, const osodio::Response& re
             size_t n = std::min(chunk.size(), len - written);
             std::memcpy(buf + written, chunk.data(), n);
             written += n;
-            s.sse_pending_bytes -= n;
+            s.sse_pending_bytes = (s.sse_pending_bytes > n) ? s.sse_pending_bytes - n : 0;
             if (n == chunk.size()) {
-                s.sse_pending.erase(s.sse_pending.begin());
+                s.sse_pending.pop_front();
             } else {
                 chunk.erase(0, n);
                 break;
@@ -544,8 +577,9 @@ void Http2Connection::h2_begin_ws(int32_t stream_id,
             size_t n = std::min(chunk.size(), len - written);
             std::memcpy(buf + written, chunk.data(), n);
             written += n;
+            s.ws_pending_bytes = (s.ws_pending_bytes > n) ? s.ws_pending_bytes - n : 0;
             if (n == chunk.size()) {
-                s.ws_pending.erase(s.ws_pending.begin());
+                s.ws_pending.pop_front();
             } else {
                 chunk.erase(0, n);
                 break;
@@ -562,15 +596,30 @@ void Http2Connection::h2_begin_ws(int32_t stream_id,
 }
 
 // h2_push_ws — enqueue outgoing WS frame bytes and resume the data provider.
+// Drops the frame and cancels the stream if the queue exceeds kMaxWsPendingBytes:
+// a slow client could otherwise grow the buffer indefinitely.
 void Http2Connection::h2_push_ws(int32_t stream_id, std::string frame) {
     if (closed_) return;
     auto it = streams_.find(stream_id);
     if (it == streams_.end() || !it->second.ws_mode) return;
 
-    it->second.ws_pending.push_back(std::move(frame));
+    auto& s = it->second;
+    if (s.ws_pending_bytes + frame.size() > kMaxWsPendingBytes) {
+        if (s.cancel_token) s.cancel_token->cancel();
+        s.ws_ended = true;
+        if (s.ws_deferred) {
+            s.ws_deferred = false;
+            nghttp2_session_resume_data(session_, stream_id);
+        }
+        flush();
+        return;
+    }
 
-    if (it->second.ws_deferred) {
-        it->second.ws_deferred = false;
+    s.ws_pending_bytes += frame.size();
+    s.ws_pending.push_back(std::move(frame));
+
+    if (s.ws_deferred) {
+        s.ws_deferred = false;
         nghttp2_session_resume_data(session_, stream_id);
     }
     flush();
@@ -611,9 +660,13 @@ void Http2Connection::close() {
 
 // ── nghttp2 callbacks ─────────────────────────────────────────────────────────
 
+static constexpr size_t kMaxWriteBufSize = 4 * 1024 * 1024; // 4 MiB per connection
+
 ssize_t Http2Connection::send_cb(nghttp2_session*, const uint8_t* data,
                                   size_t length, int, void* user_data) {
     auto* self = static_cast<Http2Connection*>(user_data);
+    if (self->write_buf_.size() - self->write_offset_ >= kMaxWriteBufSize)
+        return NGHTTP2_ERR_WOULDBLOCK;
     self->write_buf_.append(reinterpret_cast<const char*>(data), length);
     return static_cast<ssize_t>(length);
 }
@@ -638,8 +691,24 @@ int Http2Connection::on_header_cb(nghttp2_session*,
     auto it = self->streams_.find(frame->hd.stream_id);
     if (it == self->streams_.end()) return 0;
 
+    if (namelen > kMaxHeaderSize || valuelen > kMaxHeaderSize)
+        return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
+
     std::string n(reinterpret_cast<const char*>(name),  namelen);
     std::string v(reinterpret_cast<const char*>(value), valuelen);
+
+    // Reject control characters in pseudo-headers and any HEADERS field.
+    // nghttp2 validates HPACK framing but lets through CR/LF/NUL/0x7F, which
+    // would let an attacker smuggle log lines or downstream header injection
+    // into anything that re-emits req.path / req.headers["host"].
+    auto has_ctl = [](const std::string& s) {
+        for (unsigned char c : s) {
+            if (c == 0 || c == '\r' || c == '\n' || c == 0x7F) return true;
+        }
+        return false;
+    };
+    if (has_ctl(n) || has_ctl(v))
+        return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
 
     auto& s = it->second;
     if      (n == ":method")    s.method    = std::move(v);
@@ -647,7 +716,11 @@ int Http2Connection::on_header_cb(nghttp2_session*,
     else if (n == ":authority") s.authority = std::move(v);
     else if (n == ":scheme")    {} // ignore
     else if (n == ":protocol" && v == "websocket") s.ws_protocol = true;
-    else                        s.req_headers[std::move(n)] = std::move(v);
+    else {
+        if (s.req_headers.size() >= kMaxHeaderCount)
+            return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
+        s.req_headers[std::move(n)] = std::move(v);
+    }
     return 0;
 }
 
@@ -664,6 +737,8 @@ int Http2Connection::on_data_chunk_recv_cb(nghttp2_session*, uint8_t,
         it->second.ws_data_feed(data, len);
     } else {
         // Normal mode: accumulate request body
+        if (it->second.body.size() + len > kMaxBodySize)
+            return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
         it->second.body.append(reinterpret_cast<const char*>(data), len);
     }
     return 0;
@@ -700,8 +775,9 @@ int Http2Connection::on_frame_recv_cb(nghttp2_session*,
     return 0;
 }
 
-int Http2Connection::on_stream_close_cb(nghttp2_session*, int32_t stream_id,
-                                         uint32_t, void* user_data) {
+int Http2Connection::on_stream_close_cb(nghttp2_session* session,
+                                         int32_t stream_id,
+                                         uint32_t error_code, void* user_data) {
     auto* self = static_cast<Http2Connection*>(user_data);
     auto it = self->streams_.find(stream_id);
     if (it != self->streams_.end()) {
@@ -710,6 +786,27 @@ int Http2Connection::on_stream_close_cb(nghttp2_session*, int32_t stream_id,
         // The feed callback holds no state we need to clean up — just clear it.
         it->second.ws_data_feed = nullptr;
         self->streams_.erase(it);
+    }
+
+    // ── CVE-2023-44487 (Rapid Reset) ────────────────────────────────────────
+    // Streams the client cancelled (RST_STREAM with CANCEL) still consumed work
+    // on our side.  Count cancellations per rolling 1-second window and tear
+    // the connection down if the attacker is opening-and-cancelling streams
+    // faster than a legitimate client ever would.
+    if (error_code == NGHTTP2_CANCEL || error_code == NGHTTP2_REFUSED_STREAM ||
+        error_code == NGHTTP2_INTERNAL_ERROR) {
+        using Clock = std::chrono::steady_clock;
+        auto now = Clock::now();
+        if (now - self->rst_window_start_ >= std::chrono::seconds(1)) {
+            self->rst_count_        = 0;
+            self->rst_window_start_ = now;
+        }
+        if (++self->rst_count_ > kMaxRstPerSecond) {
+            nghttp2_submit_goaway(session, NGHTTP2_FLAG_NONE,
+                                  nghttp2_session_get_last_proc_stream_id(session),
+                                  NGHTTP2_ENHANCE_YOUR_CALM, nullptr, 0);
+            return NGHTTP2_ERR_CALLBACK_FAILURE;
+        }
     }
     return 0;
 }

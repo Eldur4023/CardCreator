@@ -3,6 +3,7 @@
 #include <string_view>
 #include <optional>
 #include <vector>
+#include <deque>
 #include <memory>
 #include <array>
 #include <cstring>
@@ -132,16 +133,21 @@ inline std::string build_frame(std::string_view payload,
 // ── WSState — shared between WSConnection and HttpConnection ─────────────────
 
 struct WSState {
-    int              fd   = -1;
     std::weak_ptr<CancellationToken> token;
     core::EventLoop* loop = nullptr;
 
-    // HTTP/2 path: instead of writing to fd, frames are enqueued via this
-    // callback (set by app.ws() when _h2_ws_ctx is present).
+    // All outbound frames go through send_fn:
+    //   • HTTP/1.1: set to call Request::_raw_write (TLS-aware ::write or SSL_write).
+    //   • HTTP/2:   set to enqueue an nghttp2 DATA chunk via H2WSContext.
     std::function<void(std::string)> send_fn;
 
-    std::string          read_buf;
-    std::vector<WSMessage> pending;
+    // Per-message size limits (DoS protection).
+    static constexpr size_t kMaxFramePayload  = 16 * 1024 * 1024;  // 16 MB per frame
+    static constexpr size_t kMaxMessageSize   = 16 * 1024 * 1024;  // 16 MB assembled
+    static constexpr size_t kMaxPendingFrames = 256;
+
+    std::string            read_buf;
+    std::deque<WSMessage>  pending;
 
     // For reassembling fragmented messages
     std::string  frag_buf;
@@ -150,57 +156,112 @@ struct WSState {
     std::coroutine_handle<> recv_waiter;
     bool closed = false;
 
-    // ── raw_send — routes through send_fn (H2) or ::write(fd) (HTTP/1.1) ─────
+    // ── raw_send — always routes through send_fn (TLS-aware for HTTP/1.1) ────
     void raw_send(const std::string& frame) {
-        if (send_fn) { send_fn(frame); return; }
-        size_t w = 0;
-        while (w < frame.size()) {
-            ssize_t n = ::write(fd, frame.data()+w, frame.size()-w);
-            if (n <= 0) break;
-            w += static_cast<size_t>(n);
-        }
+        if (send_fn) send_fn(frame);
     }
 
     // ── Parse as many complete frames as possible ─────────────────────────────
+    // Sends a Close frame with `code` and tears the connection down.  RFC 6455
+    // §5.5.1 close codes used here:
+    //   1002 protocol error · 1009 message too big.
+    void fail_close(uint16_t code) {
+        char buf[4];
+        buf[0] = char(0x88);   // FIN + Close
+        buf[1] = 2;
+        buf[2] = char(code >> 8);
+        buf[3] = char(code & 0xFF);
+        raw_send(std::string(buf, 4));
+        closed = true;
+    }
+
     void try_parse() {
         while (true) {
             if (read_buf.size() < 2) break;
             auto* p = reinterpret_cast<const uint8_t*>(read_buf.data());
 
             bool    fin     = (p[0] & 0x80) != 0;
+            uint8_t rsv     = p[0] & 0x70;
             uint8_t opcode  = p[0] & 0x0F;
             bool    masked  = (p[1] & 0x80) != 0;
             uint8_t len7    = p[1] & 0x7F;
 
-            size_t  hdr = 2;
+            // RFC 6455 §5.2: RSV bits MUST be 0 unless an extension defines
+            // them.  No extensions are negotiated → any RSV set is a protocol
+            // violation.
+            if (rsv != 0) { fail_close(1002); return; }
+
+            // RFC 6455 §11.8: opcodes 0x3–0x7 (non-control) and 0xB–0xF
+            // (control) are reserved and MUST fail the connection.
+            const bool is_control = (opcode & 0x08) != 0;
+            if ((!is_control && opcode > 0x2) || (is_control && opcode > 0xA)) {
+                fail_close(1002); return;
+            }
+
+            size_t   hdr = 2;
             uint64_t payload_len;
-            if      (len7 == 126) { if (read_buf.size()<4) break; payload_len=(uint8_t(p[2])<<8)|uint8_t(p[3]); hdr+=2; }
-            else if (len7 == 127) { if (read_buf.size()<10) break; payload_len=0; for(int i=0;i<8;++i) payload_len=(payload_len<<8)|p[2+i]; hdr+=8; }
+            if      (len7 == 126) { if (read_buf.size()<4)  break; payload_len=(uint8_t(p[2])<<8)|uint8_t(p[3]); hdr+=2; }
+            else if (len7 == 127) {
+                if (read_buf.size()<10) break;
+                payload_len=0;
+                for(int i=0;i<8;++i) payload_len=(payload_len<<8)|p[2+i];
+                hdr+=8;
+                // RFC 6455 §5.2: the most significant bit of the 64-bit length
+                // MUST be 0.  Fail the connection cleanly rather than rely on
+                // the 16 MB cap to mop up the resulting nonsense.
+                if (payload_len & (uint64_t(1) << 63)) { fail_close(1002); return; }
+            }
             else                  { payload_len = len7; }
 
+            // RFC 6455 §5.5: control frames MUST NOT be fragmented and MUST
+            // have payload ≤ 125 bytes.  Without this check a peer could send
+            // a Close with a huge payload that the auto-Pong path would echo
+            // back, amplifying traffic.
+            if (is_control && (!fin || payload_len > 125)) {
+                fail_close(1002); return;
+            }
+
+            // Reject oversized frames before any arithmetic that could overflow.
+            if (payload_len > kMaxFramePayload) { closed = true; return; }
+
             if (masked) hdr += 4;
-            if (read_buf.size() < hdr + payload_len) break;  // wait for more data
+
+            // Guard: hdr + payload_len fits in size_t without overflow because
+            // payload_len <= kMaxFramePayload (16 MB) and hdr <= 14.
+            if (read_buf.size() < hdr + static_cast<size_t>(payload_len)) break;
+
+            // Reject if the receiver queue is already full.
+            if (pending.size() >= kMaxPendingFrames) { closed = true; return; }
 
             uint8_t mask_key[4] = {};
             if (masked) memcpy(mask_key, p + hdr - 4, 4);
 
-            std::string payload(read_buf.data() + hdr, payload_len);
+            std::string payload(read_buf.data() + hdr, static_cast<size_t>(payload_len));
             if (masked)
                 for (size_t i = 0; i < payload.size(); ++i)
                     payload[i] ^= mask_key[i % 4];
 
-            read_buf.erase(0, hdr + payload_len);
+            read_buf.erase(0, hdr + static_cast<size_t>(payload_len));
 
-            // Control frames (RFC 6455 §5.5): never fragmented
+            // Control frames (RFC 6455 §5.5)
             if (opcode == 0x8) {  // Close
                 closed = true;
-                raw_send(std::string("\x88\x00", 2));  // echo close frame
+                // Echo a Close frame; reuse the peer's close code if present.
+                std::string echo;
+                echo += char(0x88);
+                if (payload.size() >= 2) {
+                    echo += char(2);
+                    echo += payload[0];
+                    echo += payload[1];
+                } else {
+                    echo += char(0);
+                }
+                raw_send(echo);
                 pending.push_back({WSMessage::Opcode::Close, std::move(payload)});
                 return;
             }
-            if (opcode == 0x9) {  // Ping → auto-pong
-                auto pong = build_frame(payload, 0xA);
-                raw_send(pong);
+            if (opcode == 0x9) {  // Ping → auto-pong (RFC 6455 §5.5.3)
+                raw_send(build_frame(payload, 0xA));
                 continue;
             }
             if (opcode == 0xA) {  // Pong
@@ -208,14 +269,24 @@ struct WSState {
                 continue;
             }
 
-            // Data frames — handle fragmentation
-            if (opcode == 0x0) {  // Continuation
+            // ── Data frames + fragmentation rules (RFC 6455 §5.4) ────────────
+            const bool fragmenting = !frag_buf.empty() || frag_opcode != 0;
+            if (opcode == 0x0) {
+                // Continuation must follow an unfinished Text/Binary frame.
+                if (!fragmenting) { fail_close(1002); return; }
+                if (frag_buf.size() + payload.size() > kMaxMessageSize) {
+                    fail_close(1009); return;
+                }
                 frag_buf += payload;
                 if (fin) {
                     pending.push_back({WSMessage::Opcode(frag_opcode), std::move(frag_buf)});
                     frag_buf.clear();
+                    frag_opcode = 0;
                 }
-            } else {  // Text or Binary
+            } else {  // Text (0x1) or Binary (0x2)
+                // Starting a new data message while another is mid-fragmentation
+                // is a protocol error — fragmented messages cannot interleave.
+                if (fragmenting) { fail_close(1002); return; }
                 if (!fin) {
                     frag_opcode = opcode;
                     frag_buf    = std::move(payload);
@@ -226,23 +297,9 @@ struct WSState {
         }
     }
 
-    // ── Called by HttpConnection::do_read() when in WS mode (HTTP/1.1 only) ──
-    void on_readable() {
-        char buf[65536];
-        while (true) {
-            ssize_t n = ::read(fd, buf, sizeof(buf));
-            if (n <= 0) {
-                if (n < 0 && (errno==EAGAIN || errno==EWOULDBLOCK || errno==EINTR)) break;
-                closed = true;
-                break;
-            }
-            read_buf.append(buf, n);
-        }
-        try_parse();
-        resume_waiter_if_ready();
-    }
-
-    // ── Called by Http2Connection::on_data_chunk_recv_cb (HTTP/2 only) ───────
+    // Called by HttpConnection::do_read() (HTTP/1.1, plain or TLS) and by
+    // Http2Connection::on_data_chunk_recv_cb (HTTP/2).  The transport layer is
+    // responsible for decrypting / demuxing; we just receive plaintext bytes.
     void feed(const uint8_t* data, size_t len) {
         read_buf.append(reinterpret_cast<const char*>(data), len);
         try_parse();
@@ -312,7 +369,7 @@ public:
         std::optional<WSMessage> await_resume() noexcept {
             if (!s->pending.empty()) {
                 auto msg = std::move(s->pending.front());
-                s->pending.erase(s->pending.begin());
+                s->pending.pop_front();
                 return msg;
             }
             return std::nullopt;  // connection closed
@@ -349,9 +406,9 @@ public:
     }
 
     bool is_open() const {
-        return s_ && !s_->closed
-               && !(s_->token.expired()
-                    || (s_->token.lock() && s_->token.lock()->is_cancelled()));
+        if (!s_ || s_->closed) return false;
+        auto t = s_->token.lock();
+        return t && !t->is_cancelled();
     }
 
 private:
@@ -359,22 +416,8 @@ private:
 
     bool write_frame(std::string_view payload, uint8_t opcode) {
         if (!is_open()) return false;
-        auto frame = detail::build_frame(payload, opcode);
-        if (s_->send_fn) {
-            s_->send_fn(frame);
-            return true;
-        }
-        size_t w = 0;
-        while (w < frame.size()) {
-            ssize_t n = ::write(s_->fd, frame.data()+w, frame.size()-w);
-            if (n < 0) {
-                if (errno == EINTR) continue;
-                if (errno == EAGAIN || errno == EWOULDBLOCK) return true;  // drop (lossy)
-                s_->closed = true;
-                return false;
-            }
-            w += static_cast<size_t>(n);
-        }
+        if (!s_->send_fn) return false;
+        s_->send_fn(detail::build_frame(payload, opcode));
         return true;
     }
 };

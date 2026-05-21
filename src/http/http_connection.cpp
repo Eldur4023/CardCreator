@@ -35,7 +35,9 @@ static std::string url_decode(const std::string& s) {
             char* endptr;
             unsigned long v = std::strtoul(buf, &endptr, 16);
             if (endptr == buf + 2) {
-                out += static_cast<char>(v);
+                // Reject %00 (null byte): it can bypass string comparisons
+                // used for authorization checks (e.g. "\0admin" != "admin").
+                if (v != 0) out += static_cast<char>(v);
                 i += 2;
             } else {
                 out += s[i];  // keep literal '%' for invalid hex sequences
@@ -199,12 +201,6 @@ void HttpConnection::do_tls_handshake() {
 // ── Read path ─────────────────────────────────────────────────────────────────
 
 void HttpConnection::do_read() {
-    // WebSocket mode: delegate all reading to the WS frame parser.
-    if (auto req = current_req_.lock(); req && req->_ws_on_readable) {
-        req->_ws_on_readable();
-        return;
-    }
-
     char buf[16384];
     while (!closed_) {
         ssize_t n;
@@ -229,10 +225,44 @@ void HttpConnection::do_read() {
                 close(); return;
             }
         }
+
+        // WebSocket mode: forward decrypted bytes to the WS frame parser.
+        if (auto req = current_req_.lock(); req && req->_ws_on_data) {
+            req->_ws_on_data(buf, static_cast<size_t>(n));
+            continue;
+        }
+
+        // Pipelining: while a previous request is in flight the parser is
+        // paused.  Buffer the bytes; on_write_complete replays them once the
+        // current response has been written.
+        if (in_flight_ || parser_.is_paused()) {
+            if (pending_buf_.size() + static_cast<size_t>(n) > kMaxPendingBuf) {
+                send_error(400, "Pipelined request too large");
+                close();
+                return;
+            }
+            pending_buf_.append(buf, static_cast<size_t>(n));
+            continue;
+        }
+
         if (!parser_.feed(buf, static_cast<size_t>(n))) {
             send_error(400, "Bad Request");
             close();
             return;
+        }
+
+        // Parser pauses after each completed message — save any trailing
+        // bytes that belong to the next pipelined request.
+        if (parser_.is_paused()) {
+            size_t un = parser_.unconsumed();
+            if (un > 0) {
+                if (un > kMaxPendingBuf) {
+                    send_error(400, "Pipelined request too large");
+                    close();
+                    return;
+                }
+                pending_buf_.append(buf + static_cast<size_t>(n) - un, un);
+            }
         }
     }
 }
@@ -240,6 +270,11 @@ void HttpConnection::do_read() {
 // ── Dispatch ──────────────────────────────────────────────────────────────────
 
 void HttpConnection::dispatch(ParsedRequest req_parsed) {
+    // Mark the connection as busy until on_write_complete fires.  do_read()
+    // will buffer further bytes rather than starting a second dispatch that
+    // would race for write_buf_ / timeout_tfd_.
+    in_flight_ = true;
+
     // Fresh cancellation token for this request.
     cancel_token_ = std::make_shared<osodio::CancellationToken>();
 
@@ -258,6 +293,32 @@ void HttpConnection::dispatch(ParsedRequest req_parsed) {
     req_ptr->loop         = &loop_;
     req_ptr->cancel_token = cancel_token_;
     req_ptr->_conn_fd     = fd_;
+
+    // TLS-aware writer for SSE / WebSocket / any path that needs direct socket
+    // I/O.  Captures `this` via shared_from_this so the SSL* and fd stay valid
+    // for the lifetime of the lambda.  After close(), ssl_ is null and fd_ is
+    // -1, so calls degrade to write(-1) which returns EBADF cleanly.
+    {
+        auto self = shared_from_this();
+        req_ptr->_raw_write = [self](const char* data, size_t len) -> ssize_t {
+            if (self->closed_) { errno = EBADF; return -1; }
+#ifdef OSODIO_HAS_TLS
+            if (self->ssl_) {
+                int n = SSL_write(self->ssl_, data, static_cast<int>(len));
+                if (n > 0) return n;
+                int err = SSL_get_error(self->ssl_, n);
+                if (err == SSL_ERROR_WANT_WRITE || err == SSL_ERROR_WANT_READ) {
+                    errno = EAGAIN;
+                    return -1;
+                }
+                errno = EIO;
+                return -1;
+            }
+#endif
+            return ::write(self->fd_, data, len);
+        };
+    }
+
     parse_query(req_parsed.query, req_ptr->query);
 
     // Keep a weak ref for WebSocket mode — do_read() routes through it.
@@ -302,7 +363,10 @@ void HttpConnection::dispatch(ParsedRequest req_parsed) {
         try {
             co_await disp(*req_ptr, *res_ptr);
         } catch (const std::exception& e) {
-            res_ptr->status(500).json({{"error", e.what()}});
+            // Log internally but do not expose e.what() to clients — it may
+            // contain connection strings, file paths, or other internal detail.
+            std::cerr << "[osodio] unhandled exception: " << e.what() << '\n';
+            res_ptr->status(500).json({{"error", "Internal Server Error"}});
         } catch (...) {
             res_ptr->status(500).json({{"error", "Internal Server Error"}});
         }
@@ -519,10 +583,41 @@ void HttpConnection::on_write_complete() {
     // Cancel the request timeout — response delivered successfully
     loop_.cancel_timer(timeout_tfd_);
     timeout_tfd_ = -1;
+    in_flight_ = false;
 
     if (!keep_alive_) {
         close();
         return;
+    }
+
+    // Pipelining: drain any buffered bytes that belong to the next request.
+    // Resume the parser, feed the saved bytes, and let the resulting dispatch
+    // start a fresh response cycle.  We deliberately avoid re-arming EPOLLIN
+    // here when a new dispatch fires — the next on_write_complete will do it.
+    if (parser_.is_paused()) parser_.resume();
+    if (!pending_buf_.empty()) {
+        std::string buf;
+        buf.swap(pending_buf_);
+        if (!parser_.feed(buf.data(), buf.size())) {
+            send_error(400, "Bad Request");
+            close();
+            return;
+        }
+        if (parser_.is_paused()) {
+            size_t un = parser_.unconsumed();
+            if (un > 0) {
+                if (un > kMaxPendingBuf) {
+                    send_error(400, "Pipelined request too large");
+                    close();
+                    return;
+                }
+                pending_buf_.assign(buf.data() + buf.size() - un, un);
+            }
+        }
+        // dispatch() inside feed() flipped in_flight_ back on; defer the
+        // EPOLLIN re-arm and the Slowloris timer until that request's write
+        // completes.
+        if (in_flight_) return;
     }
 
     // Re-arm the header timeout for the next pipelined/keep-alive request.
@@ -561,13 +656,12 @@ void HttpConnection::close() {
     // Signal any suspended coroutines (sleep, ws.recv()) to wake up and exit.
     if (cancel_token_) cancel_token_->cancel();
 
-    // Wake any suspended ws.recv() awaitable directly.
-    if (auto req = current_req_.lock(); req && req->_ws_on_readable) {
-        // _ws_on_readable holds a shared_ptr to WSState; access it via the
-        // lambda's closure.  We notify closed via cancel_token (already done
-        // above via set_wake), but also call notify_closed in case recv_waiter
-        // was registered after the last set_wake.
-        req->_ws_on_readable = nullptr;  // prevent further calls after close
+    // Drop the data callback so no further bytes get dispatched.  The
+    // shared_ptr<WSState> captured inside the closure stays alive via the
+    // running handler coroutine until that coroutine observes the cancellation
+    // and unwinds.
+    if (auto req = current_req_.lock(); req && req->_ws_on_data) {
+        req->_ws_on_data = nullptr;
     }
     current_req_.reset();
 

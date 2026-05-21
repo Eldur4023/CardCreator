@@ -3,6 +3,7 @@
 #include <vector>
 #include <unordered_map>
 #include <cstdint>
+#include <filesystem>
 #include <unistd.h>
 #include "types.hpp"
 #include "router.hpp"
@@ -40,7 +41,10 @@ public:
     // routing for React/Vue/Svelte apps.
     //   app.serve_static("/", "./dist", true)
     App& serve_static(std::string url_prefix, std::string fs_root, bool spa = false) {
-        static_mounts_.push_back({std::move(url_prefix), std::move(fs_root), spa});
+        std::error_code ec;
+        auto canon = std::filesystem::canonical(fs_root, ec);
+        static_mounts_.push_back({std::move(url_prefix), std::move(fs_root), spa,
+                                   ec ? std::filesystem::path{} : canon});
         return *this;
     }
 
@@ -156,9 +160,50 @@ public:
     //       }
     //   });
     //
+    // ── Cross-Site WebSocket Hijacking (CSWH) protection ─────────────────────
+    // Browsers do NOT enforce same-origin policy on WebSocket handshakes.
+    // Any site can open a WS connection that inherits the user's cookies, so
+    // an authenticated WS endpoint without an Origin check is hijackable.
+    //
+    //   app.ws("/chat", handler, {.allowed_origins = {"https://app.example.com"}});
+    //
+    // If allowed_origins is empty (default) the check is skipped — only safe
+    // for unauthenticated public endpoints.
+    struct WSOptions {
+        std::vector<std::string> allowed_origins;
+    };
+
     template<typename F>
     App& ws(std::string path, F&& fn) {
-        auto wrapper = [fn = std::forward<F>(fn)](Request& req, Response& res) mutable -> Task<void> {
+        // No allowed_origins configured: any website can open a WebSocket
+        // to this endpoint and inherit the user's cookies (CSWSH).
+        // Safe only for unauthenticated / public endpoints.
+        // Suppress this warning with: app.ws(path, fn, {.allowed_origins = {"https://your-app.com"}})
+        std::cerr << "[osodio] ws(\"" << path << "\"): no allowed_origins set — "
+                     "cross-site WebSocket hijacking possible on cookie-authenticated endpoints. "
+                     "Use ws(path, fn, {.allowed_origins = {\"https://your-app.com\"}}) to restrict.\n";
+        return ws(std::move(path), std::forward<F>(fn), WSOptions{});
+    }
+
+    template<typename F>
+    App& ws(std::string path, F&& fn, WSOptions opts) {
+        auto wrapper = [fn = std::forward<F>(fn), opts = std::move(opts)]
+                       (Request& req, Response& res) mutable -> Task<void> {
+
+            // Origin check — applied to both HTTP/1.1 and RFC 8441 (HTTP/2) paths.
+            if (!opts.allowed_origins.empty()) {
+                auto origin = req.header("origin");
+                bool ok = false;
+                if (origin) {
+                    for (const auto& o : opts.allowed_origins) {
+                        if (o == *origin) { ok = true; break; }
+                    }
+                }
+                if (!ok) {
+                    res.status(403).json({{"error", "Origin not allowed"}});
+                    co_return;
+                }
+            }
 
             // ── HTTP/2 path (RFC 8441 — CONNECT + :protocol: websocket) ──────
             if (req._h2_ws_ctx) {
@@ -185,15 +230,58 @@ public:
             // ── HTTP/1.1 path (RFC 6455 — 101 Switching Protocols) ───────────
             auto upgrade = req.header("upgrade");
             auto key     = req.header("sec-websocket-key");
-            if (!upgrade || upgrade->find("websocket") == std::string::npos || !key) {
-                res.status(426).json({{"error","WebSocket upgrade required"}});
+
+            // Token-level match for Upgrade (RFC 7230 §3.2.6): split on ',',
+            // trim, compare case-insensitively.  A substring search would
+            // accept "notwebsocket" and reject "WebSocket".
+            auto has_websocket_token = [](const std::string& h) {
+                size_t pos = 0;
+                while (pos < h.size()) {
+                    size_t comma = h.find(',', pos);
+                    size_t end = (comma == std::string::npos) ? h.size() : comma;
+                    size_t a = pos, b = end;
+                    while (a < b && (h[a] == ' ' || h[a] == '\t')) ++a;
+                    while (b > a && (h[b-1] == ' ' || h[b-1] == '\t')) --b;
+                    if (b - a == 9) {
+                        bool eq = true;
+                        static const char kWs[] = "websocket";
+                        for (size_t i = 0; i < 9; ++i) {
+                            char c = h[a + i];
+                            if (c >= 'A' && c <= 'Z') c = static_cast<char>(c + 32);
+                            if (c != kWs[i]) { eq = false; break; }
+                        }
+                        if (eq) return true;
+                    }
+                    if (comma == std::string::npos) break;
+                    pos = comma + 1;
+                }
+                return false;
+            };
+
+            if (!upgrade || !has_websocket_token(*upgrade) || !key) {
+                res.status(426)
+                   .header("Sec-WebSocket-Version", "13")
+                   .json({{"error","WebSocket upgrade required"}});
                 co_return;
             }
 
-            if (req._conn_fd < 0) {
-                res.status(500).json({{"error","no fd for WS upgrade"}});
+            // RFC 6455 §4.1: Sec-WebSocket-Version MUST be 13.  Reject other
+            // drafts with 426 + the version header so the client can retry.
+            auto ws_ver = req.header("sec-websocket-version");
+            if (!ws_ver || *ws_ver != "13") {
+                res.status(426)
+                   .header("Sec-WebSocket-Version", "13")
+                   .json({{"error","Unsupported WebSocket version"}});
                 co_return;
             }
+
+            if (!req._raw_write) {
+                res.status(500).json({{"error","no raw writer for WS upgrade"}});
+                co_return;
+            }
+
+            // Write the handshake through the TLS-aware writer so HTTPS works
+            // identically to plain HTTP.
             std::string hs =
                 "HTTP/1.1 101 Switching Protocols\r\n"
                 "Upgrade: websocket\r\n"
@@ -201,17 +289,41 @@ public:
                 "Sec-WebSocket-Accept: " + detail::ws_accept(*key) + "\r\n\r\n";
             size_t sent = 0;
             while (sent < hs.size()) {
-                ssize_t n = ::write(req._conn_fd, hs.data()+sent, hs.size()-sent);
-                if (n <= 0) co_return;
+                ssize_t n = req._raw_write(hs.data() + sent, hs.size() - sent);
+                if (n < 0) {
+                    if (errno == EINTR) continue;
+                    co_return;
+                }
+                if (n == 0) co_return;
                 sent += static_cast<size_t>(n);
             }
 
             auto ws_state = std::make_shared<detail::WSState>();
-            ws_state->fd    = req._conn_fd;
             ws_state->token = req.cancel_token;
             ws_state->loop  = req.loop;
+            // Outbound frames: best-effort lossy write through the TLS-aware
+            // writer.  EAGAIN/partial writes drop the frame to keep the loop
+            // responsive (matches the prior plaintext behaviour).
+            auto writer = req._raw_write;
+            ws_state->send_fn = [writer](std::string frame) {
+                size_t w = 0;
+                while (w < frame.size()) {
+                    ssize_t n = writer(frame.data() + w, frame.size() - w);
+                    if (n < 0) {
+                        if (errno == EINTR) continue;
+                        return;   // EAGAIN / fatal → drop remainder
+                    }
+                    if (n == 0) return;
+                    w += static_cast<size_t>(n);
+                }
+            };
 
-            req._ws_on_readable = [ws_state]() { ws_state->on_readable(); };
+            // Incoming bytes (decrypted by HttpConnection::do_read) flow here.
+            auto state_weak = std::weak_ptr<detail::WSState>(ws_state);
+            req._ws_on_data = [state_weak](const char* data, size_t len) {
+                if (auto s = state_weak.lock())
+                    s->feed(reinterpret_cast<const uint8_t*>(data), len);
+            };
             res.mark_ws_started();
 
             WSConnection ws_conn(ws_state);
@@ -263,7 +375,12 @@ public:
     // a network connection. Used by TestClient for in-process testing.
     Task<void> handle_request(Request& req, Response& res);
 
-    struct StaticMount { std::string prefix; std::string root; bool spa = false; };
+    struct StaticMount {
+        std::string prefix;
+        std::string root;
+        bool spa = false;
+        std::filesystem::path canonical_root;
+    };
 
 private:
     // Called once per route registration to capture type metadata for OpenAPI.
