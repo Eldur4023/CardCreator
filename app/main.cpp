@@ -134,6 +134,26 @@ int main() {
         }
     });
 
+    app.patch("/api/library/:id", [](osodio::Request& req, osodio::Response& res) {
+        const std::string id = req.params.count("id") ? req.params.at("id") : "";
+        try {
+            json patch = json::parse(req.body);
+            auto cards = library_read();
+            bool found = false;
+            for (auto& c : cards) {
+                if (c.value("id","") != id) continue;
+                if (patch.contains("name")) c["name"] = patch["name"];
+                found = true;
+                break;
+            }
+            if (!found) { res.status(404).json({{"error","not found"}}); return; }
+            library_write(cards);
+            res.json({{"ok", true}});
+        } catch (...) {
+            res.status(400).json({{"error","invalid json"}});
+        }
+    });
+
     app.del("/api/library/:id", [](osodio::Request& req, osodio::Response& res) {
         const std::string id = req.params.count("id") ? req.params.at("id") : "";
         auto cards = library_read();

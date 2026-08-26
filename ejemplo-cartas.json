@@ -1,0 +1,23 @@
+[
+  {
+    "name": "Consumir en la Hoguera",
+    "mana": "{1}{B}",
+    "type": "Instantáneo — Piromancia",
+    "rules": "Destruye la criatura objetivo. Pierdes 2 vidas.",
+    "art": "C:/Users/Burnt/Desktop/MTG/Mazos/Enlazar La Llama/Fotis/0999ca98a90e6f14dcaf93ebb382d89c.jpg"
+  },
+  {
+    "name": "La Llama Crece",
+    "mana": "{3}{R}{R}",
+    "type": "Encantamiento Legendario",
+    "rules": "Si una piromancia que controlas fuera a hacer daño, hace el doble de ese daño en su lugar.",
+    "art": "C:/Users/Burnt/Desktop/MTG/Mazos/Enlazar La Llama/Fotis/12998c4a8f94b7ac99fbe4daa54d087d.jpg"
+  },
+  {
+    "name": "Cremación Ritual",
+    "mana": "{B}{R}",
+    "type": "Instantáneo — Piromancia",
+    "rules": "Exilia la criatura o el planeswalker objetivo. Si tenía coste de maná 4 o menos, roba una carta.",
+    "art": "C:/Users/Burnt/Desktop/MTG/Mazos/Enlazar La Llama/Fotis/20eb8d5bf38c035398488d4ff777d111.jpg"
+  }
+]

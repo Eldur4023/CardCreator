@@ -28,7 +28,15 @@
             transition:color .15s,border-color .15s;
         }
         #topbar a.back:hover { color:var(--text); border-color:var(--accent-hover); }
-        #card-count { font-size:12px; color:var(--text-dim); margin-left:auto; }
+        #card-count { font-size:12px; color:var(--text-dim); }
+        #search {
+            margin-left:auto; width:220px;
+            background:var(--input-bg); border:1px solid var(--input-border);
+            border-radius:4px; color:var(--text); padding:6px 10px;
+            font-family:inherit; font-size:13px; outline:none;
+            transition:border-color .15s;
+        }
+        #search:focus { border-color:var(--accent-hover); }
 
         /* ── Deck sidebar ── */
         #deck-sidebar {
@@ -126,6 +134,15 @@
         .card-name {
             font-family:belerenb,sans-serif; font-size:13px;
             color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+            cursor:text; border-radius:3px; padding:1px 3px; margin:-1px -3px;
+            transition:background .15s;
+        }
+        .card-name:hover { background:#2a2a2a; }
+        .card-name-input {
+            font-family:belerenb,sans-serif; font-size:13px;
+            background:var(--input-bg); border:1px solid var(--accent-hover);
+            border-radius:3px; color:var(--text); padding:1px 4px;
+            width:100%; outline:none;
         }
         .card-date { font-size:10px; color:var(--text-dim); }
 
@@ -153,6 +170,7 @@
         <a class="back" href="/">← Back</a>
         <h1>Card Library</h1>
         <span id="card-count"></span>
+        <input id="search" type="text" placeholder="Search by name…" oninput="renderCards()">
     </div>
 
     <!-- Deck sidebar -->
@@ -266,11 +284,16 @@ async function deleteDeck(id) {
 // ── Cards ────────────────────────────────────────────────────────────────────
 
 function visibleCards() {
-    if (activeDeckId === null) return allCards;
-    const deck = allDecks.find(d => d.id === activeDeckId);
-    if (!deck) return [];
-    const set = new Set(deck.cards || []);
-    return allCards.filter(c => set.has(c.id));
+    const query = document.getElementById('search')?.value.trim().toLowerCase() ?? '';
+    let cards = allCards;
+    if (activeDeckId !== null) {
+        const deck = allDecks.find(d => d.id === activeDeckId);
+        if (!deck) return [];
+        const set = new Set(deck.cards || []);
+        cards = cards.filter(c => set.has(c.id));
+    }
+    if (query) cards = cards.filter(c => (c.name || '').toLowerCase().includes(query));
+    return cards;
 }
 
 function renderCards() {
@@ -316,28 +339,48 @@ function buildCardEl(card, grid) {
     const body = document.createElement('div');
     body.className = 'card-body';
 
+    // ── Inline rename ──
     const name = document.createElement('div');
     name.className = 'card-name';
-    name.title = card.name || 'Untitled';
+    name.title = 'Click to rename';
     name.textContent = card.name || 'Untitled';
+    name.onclick = () => startRename(card, name);
 
     const date = document.createElement('div');
     date.className = 'card-date';
     date.textContent = new Date(card.savedAt).toLocaleDateString();
 
+    // ── Action row 1: Edit + Delete ──
     const actions = document.createElement('div');
     actions.className = 'card-actions';
 
+    const editBtn = document.createElement('a');
+    editBtn.href = '/editor.html?load=' + encodeURIComponent(card.id);
+    editBtn.style.cssText = 'flex:1;display:block;text-align:center;text-decoration:none';
+    const editBtnInner = document.createElement('button');
+    editBtnInner.textContent = 'Edit';
+    editBtnInner.style.width = '100%';
+    editBtn.appendChild(editBtnInner);
+
+    const delBtn = document.createElement('button');
+    delBtn.className = 'danger';
+    delBtn.textContent = 'Delete';
+    delBtn.onclick = () => deleteCard(card.id);
+
+    actions.append(editBtn, delBtn);
+
+    // ── Action row 2: deck management ──
+    const deckRow = document.createElement('div');
+    deckRow.className = 'card-actions';
+
     if (activeDeckId) {
-        // Remove from current deck
         const removeBtn = document.createElement('button');
         removeBtn.className = 'secondary';
         removeBtn.textContent = 'Remove from deck';
         removeBtn.style.flex = '1';
         removeBtn.onclick = () => removeFromDeck(card.id, activeDeckId);
-        actions.appendChild(removeBtn);
-    } else {
-        // Deck selector + add button
+        deckRow.appendChild(removeBtn);
+    } else if (allDecks.length) {
         const sel = document.createElement('select');
         sel.className = 'deck-assign-select';
         sel.innerHTML = '<option value="">Add to deck…</option>';
@@ -358,12 +401,52 @@ function buildCardEl(card, grid) {
         const wrap = document.createElement('div');
         wrap.className = 'deck-assign-wrap';
         wrap.appendChild(sel);
-        actions.appendChild(wrap);
+        deckRow.appendChild(wrap);
     }
 
     body.append(name, date, actions);
+    if (deckRow.children.length) body.appendChild(deckRow);
     el.append(thumbWrap, body);
     grid.appendChild(el);
+}
+
+async function deleteCard(cardId) {
+    const card = allCards.find(c => c.id === cardId);
+    if (!confirm('Delete "' + (card?.name || 'this card') + '"? This cannot be undone.')) return;
+    await apiDel('/api/library/' + encodeURIComponent(cardId));
+    allCards = allCards.filter(c => c.id !== cardId);
+    allDecks.forEach(d => { d.cards = (d.cards || []).filter(id => id !== cardId); });
+    renderDecks();
+    renderCards();
+}
+
+function startRename(card, nameEl) {
+    const input = document.createElement('input');
+    input.className = 'card-name-input';
+    input.value = card.name || '';
+    nameEl.replaceWith(input);
+    input.focus();
+    input.select();
+
+    const commit = async () => {
+        const newName = input.value.trim() || card.name || 'Untitled';
+        if (newName !== card.name) {
+            await fetch('/api/library/' + encodeURIComponent(card.id), {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: newName }),
+            });
+            card.name = newName;
+        }
+        nameEl.textContent = card.name;
+        input.replaceWith(nameEl);
+    };
+
+    input.onblur  = commit;
+    input.onkeydown = e => {
+        if (e.key === 'Enter')  { e.preventDefault(); input.blur(); }
+        if (e.key === 'Escape') { input.value = card.name; input.blur(); }
+    };
 }
 
 async function addToDeck(cardId, deckId) {

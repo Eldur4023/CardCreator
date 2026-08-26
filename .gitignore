@@ -1,3 +1,7 @@
 assets
 cardconjurer-master
 build
+data
+rendered
+__pycache__
+*.pyc

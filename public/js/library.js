@@ -1,6 +1,11 @@
 'use strict';
 
-document.addEventListener('DOMContentLoaded', () => renderLibrary());
+document.addEventListener('DOMContentLoaded', () => {
+    const params = new URLSearchParams(location.search);
+    const loadId = params.get('load');
+    if (loadId) loadCard(loadId);
+    renderLibrary();
+});
 
 async function _libraryLoad() {
     try {

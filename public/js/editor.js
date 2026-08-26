@@ -60,6 +60,13 @@ art.src       = '/img/blank.png';
 setSymbol.src = '/img/blank.png';
 watermark.src = '/img/blank.png';
 
+// Expose on window: library.js reads window.art / window.setSymbol /
+// window.watermark when serializing and loading cards. Without this the
+// saved entry stores an empty art field and loading never restores it.
+window.art       = art;
+window.setSymbol = setSymbol;
+window.watermark = watermark;
+
 art.onload       = () => drawCard();
 setSymbol.onload = () => drawCard();
 watermark.onload = () => drawCard();
@@ -112,6 +119,17 @@ loadManaSymbols(true, ['planeswalker'], [0.6, 1.2]);
 loadManaSymbols(true, ['+1','+2','+3','+4','+5','+6','+7','+8','+9',
                         '-1','-2','-3','-4','-5','-6','-7','-8','-9','+0'], [1.6, 1]);
 
+// Tracks version scripts already injected (frames/versionSaga.js, etc.).
+// Declared here because resetCardIrregularities() and library.js both use it.
+var loadedVersions = [];
+function loadScript(src) {
+    if (!src || loadedVersions.includes(src)) return;
+    loadedVersions.push(src);
+    const s = document.createElement('script');
+    s.src = src;
+    document.body.appendChild(s);
+}
+
 // ── Reset card state ──────────────────────────────────────────────────────────
 async function resetCardIrregularities({ canvas } = {}) {
     if (canvas) {
@@ -134,6 +152,7 @@ async function resetCardIrregularities({ canvas } = {}) {
     card.onload          = null;
     card.planeswalker    = null;
     card.saga            = null;
+    card.class           = null;
 
     canvasList.forEach(name => sizeCanvas(name));
 
@@ -144,6 +163,7 @@ async function resetCardIrregularities({ canvas } = {}) {
     if (window.planeswalkerPreFrameContext)  planeswalkerPreFrameContext.clearRect(0, 0, planeswalkerPreFrameCanvas.width, planeswalkerPreFrameCanvas.height);
     if (window.planeswalkerPostFrameContext) planeswalkerPostFrameContext.clearRect(0, 0, planeswalkerPostFrameCanvas.width, planeswalkerPostFrameCanvas.height);
     if (window.sagaContext)                  sagaContext.clearRect(0, 0, sagaCanvas.width, sagaCanvas.height);
+    if (window.classContext)                 classContext.clearRect(0, 0, classCanvas.width, classCanvas.height);
     // Reset version tracking so next load re-inits the editor
     loadedVersions = loadedVersions.filter(v =>
         v !== '/js/frames/versionPlaneswalker.js' && v !== '/js/frames/versionSaga.js'
@@ -676,6 +696,8 @@ document.addEventListener('DOMContentLoaded', () => {
     initFrameBrowser();
     drawCard();
     initArtDrag();
+    // Fonts arrive after this first paint; redraw once they are really in.
+    ensureFontsLoaded().then(drawCard);
 });
 
 function loadDefaultTextOptions() {
@@ -785,9 +807,49 @@ function _drawCard() {
     // 6. Guidelines
     if (document.getElementById('show-guidelines')?.checked) drawGuidelines();
 
-    // 7. Scale to preview
+    // 7. Round the corners
+    roundCardCorners();
+
+    // 8. Scale to preview
     previewContext.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
     previewContext.drawImage(cardCanvas, 0, 0, previewCanvas.width, previewCanvas.height);
+}
+
+// Full-art frames bleed to the edge, so nothing clips the card to its rounded
+// silhouette and the exported PNG comes out square with opaque corners.
+// Calibrated against the existing cards, which round at 64px on a 2010-wide
+// canvas (they measure 59 with a >200-alpha probe; the arc's antialiasing
+// accounts for the rest).
+const CORNER_RADIUS = 64 / 2010;
+
+function roundCardCorners() {
+    const r = (card.cornerRadius ?? CORNER_RADIUS) * card.width;
+    if (r <= 0) return;
+
+    const x = scaleX(0), y = scaleY(0);
+    const w = scaleWidth(1), h = scaleHeight(1);
+
+    const mask = document.createElement('canvas');
+    mask.width  = cardCanvas.width;
+    mask.height = cardCanvas.height;
+    const mc = mask.getContext('2d');
+    mc.fillStyle = '#000';
+    mc.beginPath();
+    if (mc.roundRect) {
+        mc.roundRect(x, y, w, h, r);
+    } else {
+        mc.moveTo(x + r, y);
+        mc.arcTo(x + w, y,     x + w, y + h, r);
+        mc.arcTo(x + w, y + h, x,     y + h, r);
+        mc.arcTo(x,     y + h, x,     y,     r);
+        mc.arcTo(x,     y,     x + w, y,     r);
+        mc.closePath();
+    }
+    mc.fill();
+
+    cardContext.globalCompositeOperation = 'destination-in';
+    cardContext.drawImage(mask, 0, 0);
+    cardContext.globalCompositeOperation = 'source-over';
 }
 
 // ── Art rendering ─────────────────────────────────────────────────────────────
@@ -949,6 +1011,24 @@ function drawSetSymbol() {
     cardContext.drawImage(setSymbol, dx, dy, dw, dh);
 }
 
+// ── Fonts ─────────────────────────────────────────────────────────────────────
+// Canvas fillText does NOT trigger @font-face fetching: the browser only loads
+// a web font once the DOM uses it. Every family below is used exclusively
+// inside the canvas, so without an explicit load they silently fall back to the
+// default serif — wrong glyphs, and wrong metrics, which then throws off
+// autoShrink and the line breaks. Must finish before the first real draw.
+const CARD_FONTS = ['gothammedium', 'belerenb', 'belerenbsc',
+                    'matrix', 'matrixb', 'matrixbsc',
+                    'mplantin', 'mplantini', 'plantinsemibold',
+                    'goudymedieval', 'phyrexian'];
+
+async function ensureFontsLoaded() {
+    if (!document.fonts) return;
+    await Promise.all(CARD_FONTS.map(f =>
+        document.fonts.load('100px ' + f).catch(() => {})));
+    await document.fonts.ready;
+}
+
 // ── Text rendering ────────────────────────────────────────────────────────────
 
 // Font map: base font → italic variant (MTG uses separate italic fonts)
@@ -1011,16 +1091,26 @@ function renderTextbox(key, obj) {
     // Tokenize the full text into a flat stream of spans
     const spans = tokenize(rawText, isMana, hideReminder);
 
-    // Auto-shrink: binary search between minSize and fontSize
-    if (!oneLine && fontSize > 12) {
+    // Auto-shrink: binary search between minSize and fontSize.
+    // One-line blocks (title, type) opt in via shrinkToFit — without it a long
+    // card name simply overflows its box and collides with the mana cost.
+    if (fontSize > 12 && (!oneLine || obj.shrinkToFit)) {
         fontSize = autoShrink(spans, fontSize, 12, tw, th, baseFont, oneLine, align);
     }
 
     // Lay out into wrapped lines
     const wrappedLines = layoutLines(spans, tw, fontSize, baseFont, oneLine, align);
 
+    // Optional vertical centring inside the box (real cards centre short rules
+    // text rather than hanging it from the top edge).
+    let drawY = ty;
+    if (obj.verticalCenter) {
+        const used = calcHeight(wrappedLines, fontSize);
+        drawY = ty + Math.max(0, (th - used) / 2);
+    }
+
     // Draw into shared paragraph canvas (cleared once per drawAllText call)
-    drawLines(paragraphContext, wrappedLines, tx, ty, tw, fontSize, {
+    drawLines(paragraphContext, wrappedLines, tx, drawY, tw, fontSize, {
         color, baseFont, align, outlineWidth,
     });
 }
@@ -1239,16 +1329,27 @@ function resolveFont(span, base, size) {
 }
 
 // ── Auto-shrink via binary search ─────────────────────────────────────────────
+function lineWidth(line, fontSize, baseFont) {
+    if (!line.tokens) return 0;
+    return line.tokens.reduce((w, t) => w + measureSpan(t, fontSize, baseFont), 0);
+}
+
 function autoShrink(spans, maxSize, minSize, maxW, maxH, baseFont, oneLine, defaultAlign = 'left') {
+    // One-line blocks never wrap, so their height always fits and only the
+    // width can overflow. Wrapping blocks are the opposite. Check both.
+    const fits = size => {
+        const lines = layoutLines(spans, maxW, size, baseFont, oneLine, defaultAlign);
+        if (calcHeight(lines, size) > maxH) return false;
+        if (oneLine && lines.some(l => lineWidth(l, size, baseFont) > maxW)) return false;
+        return true;
+    };
+
     let lo = minSize, hi = maxSize;
     while (hi - lo > 1) {
-        const mid   = (lo + hi) / 2;
-        const lines = layoutLines(spans, maxW, mid, baseFont, oneLine, defaultAlign);
-        const h     = calcHeight(lines, mid);
-        if (h <= maxH) lo = mid; else hi = mid;
+        const mid = (lo + hi) / 2;
+        if (fits(mid)) lo = mid; else hi = mid;
     }
-    const lines = layoutLines(spans, maxW, lo, baseFont, oneLine, defaultAlign);
-    return calcHeight(lines, lo) <= maxH ? lo : minSize;
+    return fits(lo) ? lo : minSize;
 }
 
 function calcHeight(lines, fontSize) {
