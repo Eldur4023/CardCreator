@@ -1461,6 +1461,40 @@ function downloadCard() {
     link.click();
 }
 
+// ── Overlay images ────────────────────────────────────────────────────────────
+// Extra layers painted by the Class, Saga and Planeswalker editors. Kept here
+// so the headless renderer can await the same images before painting.
+const OVERLAY_SRC = {
+    classHeader: '/img/frames/Class/_ui/header.png',
+    sagaChapter: '/img/frames/Saga/_ui/sagaChapter.png',
+    sagaDivider: '/img/frames/Saga/_ui/sagaDivider.png',
+    pwPlus:      '/img/frames/Planeswalker/_ui/planeswalkerPlus.png',
+    pwMinus:     '/img/frames/Planeswalker/_ui/planeswalkerMinus.png',
+    pwNeutral:   '/img/frames/Planeswalker/_ui/planeswalkerNeutral.png',
+    pwOdd:       '/img/frames/Planeswalker/_ui/abilityLineOdd.png',
+    pwEven:      '/img/frames/Planeswalker/_ui/abilityLineEven.png',
+    pwOddDark:   '/img/frames/Planeswalker/_ui/abilityLineOddDarkened.png',
+    pwEvenDark:  '/img/frames/Planeswalker/_ui/abilityLineEvenDarkened.png',
+    pwMask:      '/img/frames/Planeswalker/_ui/text.svg',
+    pwMaskTall:  '/img/frames/Planeswalker/_ui/planeswalkerTallMaskRules.png',
+};
+
+const overlay = {};   // key → Image, created on first use
+
+// Resolves once every named overlay image is decoded (or has failed to load).
+function ensureOverlayImages(...keys) {
+    return Promise.all(keys.map(key => new Promise(res => {
+        const img = overlay[key] ||= Object.assign(new Image(), { crossOrigin: 'anonymous' });
+        if (img.src && img.complete) { res(img); return; }
+        img.onload = img.onerror = () => res(img);
+        img.src = OVERLAY_SRC[key];
+    })));
+}
+
+function overlayReady(key) {
+    const img = overlay[key];
+    return !!(img && img.complete && img.naturalWidth);
+}
 
 // ── Planeswalker editor ───────────────────────────────────────────────────────
 // Layout table: [tall][count-1][abilityIndex] — Y centers for loyalty badges
@@ -1470,8 +1504,20 @@ const PW_ABILITY_LAYOUT = [
 ];
 
 // Module-scoped PW images (created once)
-var _pwPlusIcon, _pwMinusIcon, _pwNeutralIcon, _pwLightToDark, _pwDarkToLight, _pwTextMask;
-var _pwLightColor = 'white', _pwDarkColor = '#a4a4a4';
+// Which overlay images this planeswalker needs — the tall frames use a
+// different text mask, and "invert colors" swaps the band gradients.
+function planeswalkerImageKeys() {
+    const pw = card.planeswalker || {};
+    return ['pwPlus', 'pwMinus', 'pwNeutral',
+            pw.invert ? 'pwOddDark'  : 'pwOdd',
+            pw.invert ? 'pwEvenDark' : 'pwEven',
+            pw.tall   ? 'pwMaskTall' : 'pwMask'];
+}
+
+function repaintPlaneswalker() {
+    return ensureOverlayImages(...planeswalkerImageKeys())
+        .then(() => { drawPlaneswalkerLayers(); drawCard(); });
+}
 
 function initPlaneswalkerEditor() {
     sizeCanvas('planeswalkerPreFrame');
@@ -1485,28 +1531,8 @@ function initPlaneswalkerEditor() {
         };
     }
 
-    if (!_pwPlusIcon) {
-        _pwPlusIcon    = new Image(); _pwPlusIcon.crossOrigin    = 'anonymous';
-        _pwMinusIcon   = new Image(); _pwMinusIcon.crossOrigin   = 'anonymous';
-        _pwNeutralIcon = new Image(); _pwNeutralIcon.crossOrigin = 'anonymous';
-        _pwLightToDark = new Image(); _pwLightToDark.crossOrigin = 'anonymous';
-        _pwDarkToLight = new Image(); _pwDarkToLight.crossOrigin = 'anonymous';
-        _pwTextMask    = new Image(); _pwTextMask.crossOrigin    = 'anonymous';
-        _pwDarkToLight.onload = () => planeswalkerEdited();
-        _pwTextMask.onload    = () => { _syncPlaneswalkerInputs(); planeswalkerEdited(); };
-    }
-    const isTall      = _activeSub() && (_activeSub().toLowerCase().includes('tall') || _activeSub().toLowerCase().includes('compleated'));
-    const uiFolder    = '/img/frames/Planeswalker/_ui';
-
-    _pwPlusIcon.src    = `${uiFolder}/planeswalkerPlus.png`;
-    _pwMinusIcon.src   = `${uiFolder}/planeswalkerMinus.png`;
-    _pwNeutralIcon.src = `${uiFolder}/planeswalkerNeutral.png`;
-    _pwLightToDark.src = `${uiFolder}/abilityLineOdd.png`;
-    _pwDarkToLight.src = `${uiFolder}/abilityLineEven.png`;
-    const maskSrc      = isTall
-        ? `${uiFolder}/planeswalkerTallMaskRules.png`
-        : `${uiFolder}/text.svg`;
-    _pwTextMask.src    = maskSrc;
+    const sub = (_activeSub() || '').toLowerCase();
+    card.planeswalker.tall = sub.includes('tall') || sub.includes('compleated');
 
     // Load planeswalker text areas (ability slots + loyalty)
     loadTextOptions({
@@ -1522,8 +1548,6 @@ function initPlaneswalkerEditor() {
 
     _buildPlaneswalkerUI();
     _syncPlaneswalkerInputs();
-    console.log('[PW init] pw.count after sync=', card.planeswalker?.count, 'heights=',
-        [0,1,2,3].map(i => document.getElementById('planeswalker-height-'+i)?.value));
     planeswalkerEdited();
 }
 
@@ -1556,6 +1580,7 @@ function _syncPlaneswalkerInputs() {
     }
 }
 
+// Reads the ability inputs into card.planeswalker / card.text, then repaints.
 function planeswalkerEdited() {
     if (!card.planeswalker || !window.planeswalkerPreFrameCanvas) return;
     const pw = card.planeswalker;
@@ -1570,7 +1595,6 @@ function planeswalkerEdited() {
 
     pw.count = 0;
     let lastY = card.text?.ability0?.y ?? 0.6239;
-    console.log('[PW edit] card.text=', !!card.text, 'ability0.y=', card.text?.ability0?.y, 'ability0.height=', card.text?.ability0?.height);
 
     for (let i = 0; i < 4; i++) {
         const obj = card.text?.['ability' + i];
@@ -1596,7 +1620,18 @@ function planeswalkerEdited() {
         lastY += height;
     }
 
-    // ── Draw ability bands (preFrame) ─────────────────────────────────────────
+    repaintPlaneswalker();
+}
+
+// Paints the ability bands (preFrame) and loyalty badges (postFrame) purely
+// from card.planeswalker + card.text, so headless rendering can reuse it.
+function drawPlaneswalkerLayers() {
+    const pw = card.planeswalker;
+    if (!pw || !window.planeswalkerPreFrameCanvas) return;
+    const [plus, minus, neutral, odd, even, mask] = planeswalkerImageKeys();
+    const lightColor = pw.invert ? 'black'   : 'white';
+    const darkColor  = pw.invert ? '#5b5b5b' : '#a4a4a4';
+
     const preCtx = planeswalkerPreFrameContext;
     const transH = scaleHeight(0.0048);
     preCtx.clearRect(0, 0, planeswalkerPreFrameCanvas.width, planeswalkerPreFrameCanvas.height);
@@ -1613,30 +1648,24 @@ function planeswalkerEdited() {
         if (i === 0)            { y -= scaleHeight(0.1); h += scaleHeight(0.1); }
         if (i === pw.count - 1) { h += scaleHeight(0.5); }
 
-        if (i % 2 === 0) {
-            preCtx.fillStyle   = _pwLightColor;
-            preCtx.globalAlpha = 0.608;
-            preCtx.fillRect(x, y + transH, w, h - 2 * transH);
-            preCtx.globalAlpha = 1;
-            if (_pwLightToDark.complete && _pwLightToDark.naturalWidth)
-                preCtx.drawImage(_pwLightToDark, x, y + h - transH, w, 2 * transH);
-        } else {
-            preCtx.fillStyle   = _pwDarkColor;
-            preCtx.globalAlpha = 0.706;
-            preCtx.fillRect(x, y + transH, w, h - 2 * transH);
-            preCtx.globalAlpha = 1;
-            if (_pwDarkToLight.complete && _pwDarkToLight.naturalWidth)
-                preCtx.drawImage(_pwDarkToLight, x, y + h - transH, w, 2 * transH);
-        }
+        const band = i % 2 === 0
+            ? { color: lightColor, alpha: 0.608, key: odd  }
+            : { color: darkColor,  alpha: 0.706, key: even };
+
+        preCtx.fillStyle   = band.color;
+        preCtx.globalAlpha = band.alpha;
+        preCtx.fillRect(x, y + transH, w, h - 2 * transH);
+        preCtx.globalAlpha = 1;
+        if (overlayReady(band.key))
+            preCtx.drawImage(overlay[band.key], x, y + h - transH, w, 2 * transH);
     }
 
-    if (_pwTextMask.complete && _pwTextMask.naturalWidth) {
+    if (overlayReady(mask)) {
         preCtx.globalCompositeOperation = 'destination-in';
-        preCtx.drawImage(_pwTextMask, scaleX(0), scaleY(0), scaleWidth(1), scaleHeight(1));
+        preCtx.drawImage(overlay[mask], scaleX(0), scaleY(0), scaleWidth(1), scaleHeight(1));
         preCtx.globalCompositeOperation = 'source-over';
     }
 
-    // ── Draw loyalty badges (postFrame) ───────────────────────────────────────
     const postCtx = planeswalkerPostFrameContext;
     postCtx.clearRect(0, 0, planeswalkerPostFrameCanvas.width, planeswalkerPostFrameCanvas.height);
     postCtx.globalCompositeOperation = 'source-over';
@@ -1645,48 +1674,33 @@ function planeswalkerEdited() {
     postCtx.textAlign    = 'center';
     postCtx.textBaseline = 'alphabetic';
 
-    const isTall = _activeSub() && (_activeSub().toLowerCase().includes('tall') || _activeSub().toLowerCase().includes('compleated'));
-    const layout = (PW_ABILITY_LAYOUT[isTall ? 1 : 0][pw.count - 1]) ?? PW_ABILITY_LAYOUT[0][2];
-    console.log('[PW edit] pw.count=', pw.count, 'isTall=', isTall, 'layout=', layout,
-        'mask complete=', _pwTextMask.complete, 'mask naturalW=', _pwTextMask.naturalWidth, 'mask src=', _pwTextMask.src);
+    const layout = PW_ABILITY_LAYOUT[pw.tall ? 1 : 0][pw.count - 1] ?? PW_ABILITY_LAYOUT[0][2];
+
+    // [icon key, icon box, text baseline offset] per badge kind.
+    const BADGES = {
+        plus:    [plus,    [0.0294, -0.0258, 0.14,   0.0724], 0.0172],
+        minus:   [minus,   [0.028,  -0.0153, 0.1414, 0.0705], 0.0181],
+        neutral: [neutral, [0.028,  -0.0153, 0.1414, 0.061 ], 0.0191],
+    };
 
     for (let i = 0; i < pw.count; i++) {
         const cost = pw.abilities[i];
+        if (!cost) continue;
         const py   = scaleY((layout[i] ?? 0.72) + (pw.abilityAdjust[i] ?? 0));
-        console.log('[PW badge]', i, 'cost=', cost, 'py=', py, 'plusComplete=', _pwPlusIcon.complete);
+        const [key, box, textY] =
+            BADGES[cost.includes('+') ? 'plus' : cost.includes('-') ? 'minus' : 'neutral'];
 
-        if (cost.includes('+')) {
-            if (_pwPlusIcon.complete && _pwPlusIcon.naturalWidth)
-                postCtx.drawImage(_pwPlusIcon, scaleX(0.0294), py - scaleHeight(0.0258), scaleWidth(0.14), scaleHeight(0.0724));
-            postCtx.fillText(cost, scaleX(0.1027), py + scaleHeight(0.0172));
-        } else if (cost.includes('-')) {
-            if (_pwMinusIcon.complete && _pwMinusIcon.naturalWidth)
-                postCtx.drawImage(_pwMinusIcon, scaleX(0.028), py - scaleHeight(0.0153), scaleWidth(0.1414), scaleHeight(0.0705));
-            postCtx.fillText(cost, scaleX(0.1027), py + scaleHeight(0.0181));
-        } else if (cost !== '') {
-            if (_pwNeutralIcon.complete && _pwNeutralIcon.naturalWidth)
-                postCtx.drawImage(_pwNeutralIcon, scaleX(0.028), py - scaleHeight(0.0153), scaleWidth(0.1414), scaleHeight(0.061));
-            postCtx.fillText(cost, scaleX(0.1027), py + scaleHeight(0.0191));
-        }
+        if (overlayReady(key))
+            postCtx.drawImage(overlay[key], scaleX(box[0]), py + scaleHeight(box[1]),
+                              scaleWidth(box[2]), scaleHeight(box[3]));
+        postCtx.fillText(cost, scaleX(0.1027), py + scaleHeight(textY));
     }
-
-    drawCard();
 }
 
 function invertPlaneswalkerColors() {
-    const invert = document.getElementById('planeswalker-invert')?.checked;
-    if (invert) {
-        _pwDarkColor  = '#5b5b5b';
-        _pwLightColor = 'black';
-        _pwLightToDark.src = '/img/frames/planeswalker/abilityLineOddDarkened.png';
-        _pwDarkToLight.src = '/img/frames/planeswalker/abilityLineEvenDarkened.png';
-    } else {
-        _pwDarkColor  = '#a4a4a4';
-        _pwLightColor = 'white';
-        _pwLightToDark.src = '/img/frames/planeswalker/abilityLineOdd.png';
-        _pwDarkToLight.src = '/img/frames/planeswalker/abilityLineEven.png';
-    }
-    planeswalkerEdited();
+    if (!card.planeswalker) return;
+    card.planeswalker.invert = !!document.getElementById('planeswalker-invert')?.checked;
+    repaintPlaneswalker();
 }
 
 // ── Adventure card text options ───────────────────────────────────────────────
@@ -1748,14 +1762,6 @@ function initSagaEditor() {
         card.saga = { abilities: [1, 1, 1, 0], count: 3, x: 0.1, width: 0.3947 };
     }
 
-    if (!window._sagaImagesLoaded) {
-        window._sagaImagesLoaded = true;
-        window.sagaChapterImg = new Image(); sagaChapterImg.crossOrigin = 'anonymous'; sagaChapterImg.onload = () => { drawSagaChapters(); drawCard(); };
-        window.sagaDividerImg = new Image(); sagaDividerImg.crossOrigin = 'anonymous'; sagaDividerImg.onload = () => { drawSagaChapters(); drawCard(); };
-        sagaChapterImg.src = '/img/frames/Saga/_ui/sagaChapter.png';
-        sagaDividerImg.src = '/img/frames/Saga/_ui/sagaDivider.png';
-    }
-
     _buildSagaUI();
     sagaEdited();
 }
@@ -1802,10 +1808,11 @@ function sagaEdited() {
         lastY += obj.height;
     }
 
-    drawSagaChapters();
-    drawCard();
+    ensureOverlayImages('sagaChapter', 'sagaDivider')
+        .then(() => { drawSagaChapters(); drawCard(); });
 }
 
+// Chapter pips + roman numerals, painted purely from card.saga + card.text.
 function drawSagaChapters() {
     if (!card.saga || !window.sagaCanvas) return;
     const s   = card.saga;
@@ -1816,7 +1823,7 @@ function drawSagaChapters() {
     ctx.fillStyle    = '#333';
     ctx.textBaseline = 'alphabetic';
 
-    let sagaCount = 1;
+    let numeral = 1;
     for (let i = 0; i < s.count; i++) {
         const obj = card.text?.['ability' + i];
         if (!obj) continue;
@@ -1824,38 +1831,28 @@ function drawSagaChapters() {
         const y = scaleY(obj.y);
         const w = scaleWidth(s.width);
         const h = scaleHeight(obj.height);
-        const chapters = s.abilities[i] || 1;
 
-        if (sagaDividerImg?.complete && sagaDividerImg.naturalWidth)
-            ctx.drawImage(sagaDividerImg, x, y - scaleHeight(0.0029) / 2, w, scaleHeight(0.0029));
+        if (overlayReady('sagaDivider'))
+            ctx.drawImage(overlay.sagaDivider, x, y - scaleHeight(0.0029) / 2, w, scaleHeight(0.0029));
 
-        if (sagaChapterImg?.complete && sagaChapterImg.naturalWidth) {
-            const nW = scaleWidth(0.0787), nH = scaleHeight(0.0629);
-            const nX = x - scaleWidth(0.0614);
-            const nY = y + (h - nH) / 2;
-            const nTX = nX + scaleWidth(0.0394);
-            const nTY = nY + scaleHeight(0.0429);
-            const sp  = scaleHeight(0.0358);
+        if (!overlayReady('sagaChapter')) continue;
 
-            if (chapters >= 3) {
-                ctx.drawImage(sagaChapterImg, nX, nY - 2*sp, nW, nH);
-                ctx.drawImage(sagaChapterImg, nX, nY,        nW, nH);
-                ctx.drawImage(sagaChapterImg, nX, nY + 2*sp, nW, nH);
-                ctx.fillText(romanNumeral(sagaCount),     nTX, nTY - 2*sp);
-                ctx.fillText(romanNumeral(sagaCount + 1), nTX, nTY);
-                ctx.fillText(romanNumeral(sagaCount + 2), nTX, nTY + 2*sp);
-                sagaCount += 3;
-            } else if (chapters === 2) {
-                ctx.drawImage(sagaChapterImg, nX, nY - sp, nW, nH);
-                ctx.drawImage(sagaChapterImg, nX, nY + sp, nW, nH);
-                ctx.fillText(romanNumeral(sagaCount),     nTX, nTY - sp);
-                ctx.fillText(romanNumeral(sagaCount + 1), nTX, nTY + sp);
-                sagaCount += 2;
-            } else {
-                ctx.drawImage(sagaChapterImg, nX, nY, nW, nH);
-                ctx.fillText(romanNumeral(sagaCount), nTX, nTY);
-                sagaCount++;
-            }
+        const nW = scaleWidth(0.0787), nH = scaleHeight(0.0629);
+        const nX = x - scaleWidth(0.0614);
+        const nY = y + (h - nH) / 2;
+        const spacing = scaleHeight(0.0358);
+
+        // One box can cover up to three chapters; they spread symmetrically
+        // around the box centre, two spacings apart for three, one for two.
+        const chapters = Math.min(3, Math.max(1, s.abilities[i] || 1));
+        const step     = chapters >= 3 ? 2 * spacing : spacing;
+        const first    = -(chapters - 1) / 2 * step;
+
+        for (let n = 0; n < chapters; n++) {
+            const dy = first + n * step;
+            ctx.drawImage(overlay.sagaChapter, nX, nY + dy, nW, nH);
+            ctx.fillText(romanNumeral(numeral++), nX + scaleWidth(0.0394),
+                         nY + scaleHeight(0.0429) + dy);
         }
     }
 }
@@ -1865,8 +1862,6 @@ function romanNumeral(n) {
 }
 
 // ── Class card editor ─────────────────────────────────────────────────────────
-
-var _classHeaderImg = null;
 
 function loadClassTextOptions() {
     card.artBounds = { x: 0.0767, y: 0.1129, width: 0.4247, height: 0.3 };
@@ -1904,13 +1899,6 @@ function initClassEditor() {
         card.class = { x: 0.5014, width: 0.422, count: 0 };
     }
 
-    if (!_classHeaderImg) {
-        _classHeaderImg = new Image();
-        _classHeaderImg.crossOrigin = 'anonymous';
-        _classHeaderImg.onload = () => { classEdited(); drawCard(); };
-        _classHeaderImg.src = '/img/frames/Class/_ui/header.png';
-    }
-
     _buildClassUI();
     classEdited();
 }
@@ -1934,6 +1922,7 @@ function _buildClassUI() {
     </div>`;
 }
 
+// Reads the level-height inputs into card.text, then repaints the headers.
 function classEdited() {
     if (!card.class || !window.classCanvas) return;
     const c = card.class;
@@ -1968,29 +1957,33 @@ function classEdited() {
     for (let i = 3; i >= 1; i--) {
         const tc = card.text?.['level' + i + 'c'];
         if (!tc || tc.y >= 2) continue;
-        const remaining = 0.8368 - tc.y;
-        tc.height = Math.max(0.05, remaining);
+        tc.height = Math.max(0.05, 0.8368 - tc.y);
         break;
     }
 
-    const ctx = classContext;
-    ctx.clearRect(0, 0, classCanvas.width, classCanvas.height);
+    ensureOverlayImages('classHeader')
+        .then(() => { drawClassHeaders(); drawCard(); });
+}
 
-    if (_classHeaderImg?.complete && _classHeaderImg.naturalWidth) {
-        for (let i = 1; i <= c.count; i++) {
-            const tc = card.text?.['level' + i + 'c'];
-            if (!tc || tc.y >= 2) continue;
-            ctx.drawImage(
-                _classHeaderImg,
-                scaleX(c.x),
-                scaleY(tc.y) - scaleHeight(0.0481),
-                scaleWidth(c.width),
-                scaleHeight(0.0481)
-            );
-        }
+// One header band above each active level, from card.class + card.text.
+function drawClassHeaders() {
+    const c = card.class;
+    if (!c || !window.classCanvas) return;
+
+    classContext.clearRect(0, 0, classCanvas.width, classCanvas.height);
+    if (!overlayReady('classHeader')) return;
+
+    for (let i = 1; i <= c.count; i++) {
+        const tc = card.text?.['level' + i + 'c'];
+        if (!tc || tc.y >= 2) continue;
+        classContext.drawImage(
+            overlay.classHeader,
+            scaleX(c.x),
+            scaleY(tc.y) - scaleHeight(0.0481),
+            scaleWidth(c.width),
+            scaleHeight(0.0481)
+        );
     }
-
-    drawCard();
 }
 
 // ── Drag to reposition art ────────────────────────────────────────────────────

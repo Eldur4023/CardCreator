@@ -1,6 +1,5 @@
-"""CardCreator backend — Flask port of app/main.cpp.
+"""CardCreator backend.
 
-Replicates the Osodio (C++) server 1:1:
   GET    /api/frames                       -> frame browser tree
   GET    /api/library                      -> saved cards
   POST   /api/library                      -> save card (prepended)
@@ -11,6 +10,7 @@ Replicates the Osodio (C++) server 1:1:
   DELETE /api/decks/<id>                   -> delete deck
   PUT    /api/decks/<id>/cards/<card_id>   -> add card to deck
   DELETE /api/decks/<id>/cards/<card_id>   -> remove card from deck
+  POST   /api/render                       -> card spec to PNG
   static: /img/frames, /img/manaSymbols, /img, /fonts, / (public)
 
 Run:  py server.py            (http://localhost:3000)
@@ -21,6 +21,7 @@ import base64
 import json
 import random
 import string
+import threading
 import time
 from pathlib import Path
 
@@ -39,7 +40,7 @@ IMG_EXTS = {".png", ".jpg", ".svg", ".webp"}
 app = Flask(__name__, static_folder=None)
 
 
-# ── CORS (the C++ server enabled it globally) ────────────────────────────────
+# ── CORS ─────────────────────────────────────────────────────────────────────
 @app.after_request
 def add_cors(res):
     res.headers["Access-Control-Allow-Origin"] = "*"
@@ -48,7 +49,7 @@ def add_cors(res):
     return res
 
 
-# ── JSON file helpers (mirror file_read_array / file_write) ──────────────────
+# ── JSON file helpers ────────────────────────────────────────────────────────
 def read_array(path: Path) -> list:
     if not path.exists():
         return []
@@ -64,7 +65,7 @@ def write_array(path: Path, arr: list) -> None:
     path.write_text(json.dumps(arr, ensure_ascii=False), encoding="utf-8")
 
 
-# ── Frame browser (mirror scan_dir) ──────────────────────────────────────────
+# ── Frame browser ────────────────────────────────────────────────────────────
 def scan_dir(directory: Path) -> dict:
     result = {"frames": [], "subs": {}}
 
@@ -118,8 +119,7 @@ def library_save():
     entry = request.get_json(silent=True)
     if entry is None:
         return jsonify({"error": "invalid json"}), 400
-    # The C++ server stored whatever it was given; keep that behaviour but
-    # make programmatic use easier by filling id/savedAt when missing.
+    # Fill id/savedAt when missing, so cards can be posted programmatically.
     if isinstance(entry, dict):
         entry.setdefault(
             "id",
@@ -210,7 +210,7 @@ def deck_remove_card(deck_id, card_id):
     return jsonify({"error": "deck not found"}), 404
 
 
-# ── Static files (mirror serve_static calls, same precedence) ────────────────
+# ── Static files ─────────────────────────────────────────────────────────────
 @app.get("/img/frames/<path:filename>")
 def static_frames(filename):
     return send_from_directory(ASSETS / "img" / "frames", filename)
@@ -234,20 +234,20 @@ def static_fonts(filename):
     return send_from_directory(ASSETS / "fonts", filename)
 
 
-# ── Headless render (see render.py) ──────────────────────────────────────────
-_worker = None
-_worker_lock = __import__("threading").Lock()
+# ── Headless render (see render.py) ───────────────────────────────────────────
+_renderer = None
+_renderer_lock = threading.Lock()
 
 
-def _get_worker():
-    """Lazily start the browser worker so plain server use stays lightweight."""
-    global _worker
-    with _worker_lock:
-        if _worker is None:
+def get_renderer():
+    """Start the browser on first use, so plain server use stays lightweight."""
+    global _renderer
+    with _renderer_lock:
+        if _renderer is None:
             import render
 
-            _worker = render.RenderWorker(f"http://127.0.0.1:{PORT}")
-    return _worker
+            _renderer = render.Renderer(f"http://127.0.0.1:{PORT}")
+    return _renderer
 
 
 @app.post("/api/render")
@@ -262,22 +262,18 @@ def api_render():
     if spec is None:
         return jsonify({"error": "invalid json"}), 400
     try:
-        worker = _get_worker()
+        renderer = get_renderer()
     except Exception as exc:  # playwright missing, browser not installed, ...
         return jsonify({"error": f"renderer unavailable: {exc}"}), 503
 
     try:
         if isinstance(spec, list):
-            out = []
-            for s in spec:
-                png = worker.render_one(s)
-                out.append({
-                    "name": s.get("name", "Untitled"),
-                    "png": base64.b64encode(png).decode(),
-                })
-            return jsonify(out)
-        png = worker.render_one(spec)
-        return Response(png, mimetype="image/png")
+            return jsonify([
+                {"name": one.get("name", "Untitled"),
+                 "png": base64.b64encode(renderer.render(one)).decode()}
+                for one in spec
+            ])
+        return Response(renderer.render(spec), mimetype="image/png")
     except Exception as exc:  # noqa: BLE001
         return jsonify({"error": str(exc)}), 500
 
@@ -292,7 +288,7 @@ def static_public(filename):
     target = PUBLIC / filename
     if target.is_file():
         return send_from_directory(PUBLIC, filename)
-    # SPA fallback (serve_static(...,"./public", true) in the C++ app)
+    # SPA fallback
     return send_from_directory(PUBLIC, "index.html")
 
 
